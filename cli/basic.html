@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>Basic</title>
+    <link rel='stylesheet' href='main.css'>
+    <w3css:/>
+    <parsing:/>
+</head>
+<body>
+    <text argv="1">[#argv#] bbb</text>
+    <%
+    for(const dbnm of ["lnksnk"]){
+        %><:snk:qry: db-conn="{@dbnm@}" db-query="[#ep-root#]basic">
+          <init#><table><thead><tr><%
+      for(const col of rec.Columns()) {
+        %><th>{@col@}</th><%
+      }
+      %></tr></thead>
+    </init>
+    <first#><tbody>
+    </first>
+    <data#><tr><%
+      for(const dta of rec.Data()) {
+        %><td>{@dta===null?"":dta@}</td><%
+      }
+      %></tr>
+    </data>
+    <last#>
+      </tbody>
+    </last>
+      <finit#><tfoot><tr><%
+      for(const col of rec.Columns()) {
+        %><th>{@col@}</th><%
+      }
+      %></tr></tfoot></table>
+      </finit>
+      </:snk:qry:><%
+    }
+    %>
+</body>
+</html>

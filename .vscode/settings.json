@@ -1,0 +1,32 @@
+{
+    "sqltools.connections": [
+        {
+            "connectionTimeout": 15,
+            "mssqlOptions": {
+                "appName": "SQLTools",
+                "useUTC": true,
+                "encrypt": false,
+                "trustServerCertificate": false
+            },
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 1433,
+            "driver": "MSSQL",
+            "name": "mssqllocal",
+            "username": "sa",
+            "password": "6@N61ng@lnksnk"
+        },
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "pgsqllocal",
+            "database": "postgres",
+            "username": "postgres",
+            "password": "6@N61ng@lnksnk"
+        }
+    ]
+}

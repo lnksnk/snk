@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>DB Stats</title>
+    <link rel='stylesheet' href='main.css'>
+</head>
+<body>
+    <table><%for(const dbcn of db.conns()){ %>
+        <tr><td>
+            <h4>{@dbcn@}</h4>
+            <table></tr><%
+                for (const [stat,info] of Object.entries(db.stats(dbcn))){
+                    %><tr><th>{@stat@}</th><td>{@info@}</td></tr><%
+                }
+                %></table>
+        </td></tr>
+        <%}%></table>
+</body>
+</html>

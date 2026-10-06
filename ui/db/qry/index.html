@@ -1,0 +1,21 @@
+<%
+for (const [rec,recnr] of db.query("[#db-conn#]","[#db-query#]")){
+    if(rec.Init()){
+        %>[#init#]<%
+        continue;
+    }
+    if(rec.Finit()) {
+        %>[#finit#]<%
+        continue;
+    }
+    if(rec.Data().length>0){
+        if(rec.First()){
+            %>[#first#]<%
+        }
+        %>[#data#]<%
+        if(rec.Last()){
+            %>[#init#]<%
+        }
+    }
+}
+%>

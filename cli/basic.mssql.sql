@@ -1,0 +1,1 @@
+select getdate() d,@test@ tst,1 t union select getdate() d,@test@ tst,2 t union select getdate() d,@test@ tst,3 t union select getdate() d,@test@ tst,4 t order by t desc;

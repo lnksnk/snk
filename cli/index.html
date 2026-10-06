@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>Lnk Snk</title>
+    <w3css:/>
+    <parsing:/>
+    <htmx:/>
+</head>
+<body>
+    {@hostip()@}
+     <div class="w3-grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
+
+<div class="w3-container w3-card">
+  <h2>London</h2>
+  <p>Explore one of the world's great cities.</p>
+  <button class="w3-button w3-black">Explore</button>
+</div>
+
+<div class="w3-container w3-card">
+  <h2>Paris</h2>
+  <p>Discover art, food, and architecture.</p>
+  <button class="w3-button w3-black">Explore</button>
+</div>
+
+<div class="w3-container w3-card">
+  <h2>Rome</h2>
+  <p>Experience thousands of years of history.</p>
+  <button class="w3-button w3-black">Explore</button>
+</div>
+
+</div><%
+import { PI, add } from '/samplemath.js';
+//const { PI,add } = require('/samplemath.js');
+    print(add(3,5));
+    %><ul><%
+    for(const fi of fsys.list("/*.html")){
+        %><li>{@fi.Path()@}</li><%
+    }
+
+    /*for(const k of Object.keys(UA)) {
+        %><li>{@k@}</li><%
+    }*/
+    %><li>{@ua.Browser()@}</li><%
+    %></ul>
+    {@ua.OS()@} {@ua.IsTablet()@}
+    <%for(var i=0;i<5;i++){%><::e-root::heading test="quest">BLU<% print((i+1),". "); %><text>Hello Snk</text></::e-root::heading><%}%>
+</body>
+</html>
