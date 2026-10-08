@@ -1,5 +1,5 @@
 <%
-for (const [rec,recnr] of db.query("[#db-conn#]","[#db-query#]")){
+for (const [rec,recnr] of DB.Query("[#db-conn#]","[#db-query#]")){
     if(rec.Init()){
         %>[#init#]<%
         continue;
