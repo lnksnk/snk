@@ -1,0 +1,6 @@
+<%
+var dbstats={}
+for (const [stat,info] of Object.entries(DB.Stats("[#db-conn#]"))){
+    dbstats[stat]=info
+}
+%>[#cntnt#]
