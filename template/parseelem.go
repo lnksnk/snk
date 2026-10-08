@@ -307,6 +307,35 @@ func ParseMarkup(rnsr RuneReaders, foundContent func(cntnt snkio.BufferWriter) (
 								}
 								return
 							}
+							if pr == '[' {
+								// [$---$]
+								if pr, prerr = nxtpr(); prerr == nil {
+									if pr == '$' {
+										for {
+											if pr, prerr = nxtpr(); prerr == nil {
+												if pr == '$' {
+													if pr, prerr = nxtpr(); prerr == nil {
+														if pr == ']' {
+															goto cptrargs
+														}
+														argval = append(argval, '$', pr)
+														continue
+													}
+													return
+												}
+												argval = append(argval, pr)
+												continue
+											}
+											return
+										}
+									}
+									cprtrns(trns...)
+									enm = nil
+									trns = nil
+									continue
+								}
+								return
+							}
 							//todo [$..$]
 							cprtrns(trns...)
 							enm = nil
