@@ -316,6 +316,9 @@ func ParseMarkup(rnsr RuneReaders, foundContent func(cntnt snkio.BufferWriter) (
 												if pr == '$' {
 													if pr, prerr = nxtpr(); prerr == nil {
 														if pr == ']' {
+															cprtarg(string(argnme), argval...)
+															argval = nil
+															argnme = nil
 															goto cptrargs
 														}
 														argval = append(argval, '$', pr)
