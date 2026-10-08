@@ -10,11 +10,11 @@
     <table><%for(const dbcn of DB.Conns()){ %>
         <tr><td>
             <h4>{@dbcn@}</h4>
-            <table></tr><%
-                for (const [stat,info] of Object.entries(DB.Stats(dbcn))){
-                    %><tr><th>{@stat@}</th><td>{@info@}</td></tr><%
+            <table><snk:db:stats conn="{@dbcn@}"><%
+                for (const [stat,info] of Object.entries(dbstats)){
+                   %><tr><th>{@stat@}</th><td>{@info@}</td></tr><%
                 }
-                %></table>
+                %></snk:db:stats></table>
         </td></tr>
         <%}%></table>
 </body>

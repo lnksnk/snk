@@ -12,7 +12,7 @@
     <text argv="1">[#argv#] bbb</text>
     <%
     for(const dbnm of ["lnksnk","lnksnk-mssql"]){
-        %><:snk:qry: db-conn="{@dbnm@}" db-query="[#ep-root#]basic" db-args=[${"test":"default"}$]>
+        %><:snk:db:qry conn="{@dbnm@}" query="[#ep-root#]basic" args=[${"test":"default"}$]>
           <init#><table><thead><tr><%
       for(const col of rec.Columns()) {
         %><th>{@col@}</th><%
@@ -36,7 +36,7 @@
       }
       %></tr></tfoot></table>
       </finit>
-      </:snk:qry:><%
+      </:snk:db:qry><%
     }
     %>
 </body>

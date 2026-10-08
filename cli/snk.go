@@ -31,7 +31,7 @@ import (
 	fst "github.com/lnksnk/snk/template/fs"
 	"github.com/lnksnk/snk/template/fs/fssobek"
 	"github.com/lnksnk/snk/ui"
-	"github.com/lnksnk/snk/ui/db/qry"
+	"github.com/lnksnk/snk/ui/db"
 	"github.com/lnksnk/snk/w3css"
 	"github.com/lnksnk/snk/websocket"
 
@@ -144,7 +144,7 @@ func main() {
 	fs.FSMap("/parsing/", "")
 	fsys.Set("/parsing/parser.js", ui.ParserJS)
 	fsys.Set("/parsing/index.html", ui.IndexHTML)
-	qry.LoadQry("/snk/qry/", fs.FSMap, fsys.Set)
+	db.LoadQry("/snk/db/", fs.FSMap, fsys.Set)
 	fs.FSMap("/htmx/", "")
 	fsys.Set("/htmx/htmax.js", htmx.HtmaxJS)
 	fsys.Set("/htmx/index.html", htmx.IndexHTML)
