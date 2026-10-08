@@ -7,11 +7,11 @@
     <link rel='stylesheet' href='main.css'>
 </head>
 <body>
-    <table><%for(const dbcn of db.conns()){ %>
+    <table><%for(const dbcn of DB.Conns()){ %>
         <tr><td>
             <h4>{@dbcn@}</h4>
             <table></tr><%
-                for (const [stat,info] of Object.entries(db.stats(dbcn))){
+                for (const [stat,info] of Object.entries(DB.Stats(dbcn))){
                     %><tr><th>{@stat@}</th><td>{@info@}</td></tr><%
                 }
                 %></table>
