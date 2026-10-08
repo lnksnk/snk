@@ -12,7 +12,7 @@
     <text argv="1">[#argv#] bbb</text>
     <%
     for(const dbnm of ["lnksnk"]){
-        %><:snk:qry: db-conn="{@dbnm@}" db-query="[#ep-root#]basic">
+        %><:snk:qry: db-conn="{@dbnm@}" db-query="[#ep-root#]basic" db-args=[${"test":"default"}$]>
           <init#><table><thead><tr><%
       for(const col of rec.Columns()) {
         %><th>{@col@}</th><%

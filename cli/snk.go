@@ -50,7 +50,7 @@ func ESDBEnv(ctx context.Context, vm *sobek.Runtime, params parameters.Parameter
 		return sbkh.FormatQuery(vm, fsstat, fsopen, out, name, driver, query)
 	})
 	return map[string]any{
-		"query": func(name string, query string, a ...any) (records func(func(snksql.Record, int64) bool), err error) {
+		"Query": func(name string, query string, a ...any) (records func(func(snksql.Record, int64) bool), err error) {
 
 			if len(a) > 0 {
 				a = append([]any{frmtsqlqry}, a...)
@@ -67,7 +67,7 @@ func ESDBEnv(ctx context.Context, vm *sobek.Runtime, params parameters.Parameter
 			records = snksql.NumberedRecords(rws)
 			return
 		},
-		"exec": func(name string, query string, a ...any) (any, error) {
+		"Exec": func(name string, query string, a ...any) (any, error) {
 			if len(a) > 0 {
 				a = append([]any{frmtsqlqry}, a...)
 			}
@@ -77,13 +77,13 @@ func ESDBEnv(ctx context.Context, vm *sobek.Runtime, params parameters.Parameter
 			a = append(a, params)
 			return snksql.ExecContext(ctx, name, query, a...)
 		},
-		"stats": func(name string) (stats any) {
+		"Stats": func(name string) (stats any) {
 			return snksql.ConnStats(name)
 		},
-		"conns": func() []string {
+		"Conns": func() []string {
 			return snksql.ConnDefinitions()
 		},
-		"conndef": snksql.DefineConn,
+		"DefineConn": snksql.DefineConn,
 	}
 }
 
@@ -320,7 +320,7 @@ func main() {
 					[]any{"uuid", func() string { return uuid.NewV7().String() }},
 					[]any{"uuid4", func() string { return uuid.NewV4().String() }},
 					[]any{"uuid7", func() string { return uuid.NewV7().String() }},
-					[]any{"db", ESDBEnv(r.Context(), vm, params, fsys, fsys)}}...)
+					[]any{"DB", ESDBEnv(r.Context(), vm, params, fsys, fsys)}}...)
 			})
 			return
 		}
