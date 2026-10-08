@@ -1,7 +1,5 @@
 <%
-var dbargs=[[#db-args#]];
-
-for (const [rec,recnr] of DB.Query("[#db-conn#]","[#db-query#]",...dbargs)){
+for (const [rec,recnr] of DB.Query("[#db-conn#]","[#db-query#]",...[[#db-args#]])){
     if(rec.Init()){
         %>[#init#]<%
         continue;
