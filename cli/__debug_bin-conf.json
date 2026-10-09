@@ -5,6 +5,7 @@
         {"name":"lnksnk-mssql","datasrc":"host=localhost:1433; user=sa; password=6@N61ng@lnksnk;"}
     ],
     "resources":[
+        {"path":"/","localroot":"/home/efjoubert/projects/myweb/"},
         {"path":"/media/","localroot":"/run/media/efjoubert/Acer/media/"},
         {"path":"/web/","localroot":"/home/efjoubert/web/"}
     ]
