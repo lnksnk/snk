@@ -115,6 +115,7 @@ func main() {
 	fs.FSMap("/htmx/", "")
 	fsys.Set("/htmx/htmax.js", htmx.HtmaxJS)
 	fsys.Set("/htmx/index.html", htmx.IndexHTML)
+	var lastconpath = appconfpath + appname + "-conf.json"
 	var f, _ = os.Open(appconfpath + appname + "-conf.json")
 	if f == nil {
 		if f, _ = os.Open(osappconfpath + appname + "-conf.json"); f == nil && sourcepath != "" {
@@ -127,7 +128,12 @@ func main() {
 		fmt.Println("no " + appname + "-config.json config file found")
 		fmt.Println("Example " + appname + "-config.json layout:")
 		fmt.Println(sampleconfig)
-		fmt.Println()
+		if osfi, _ := os.Create(lastconpath); osfi != nil {
+			snkio.Fprint(osfi, sampleconfig)
+			osfi.Close()
+			f, _ = os.Open(lastconpath)
+		}
+
 	}
 	var confbfw snkio.BufferWriter
 	var lstnrs []net.Listener
