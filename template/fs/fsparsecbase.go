@@ -180,53 +180,52 @@ func FParseCbaseFS(topout, codeout io.Writer, topfi fs.FileInfo, a ...any) (fser
 				}
 			}
 			var nr rune
+			var pvr rune
 			for nr = range rniter {
+				if cntprei > 0 && cntpre[cntprei-1] == pvr && cntpre[cntprei] != nr {
+					cntrs = append(cntrs, cntpre[:cntprei]...)
+					cntprei = 0
+					pvr = 0
+				}
 				if nr == cntpre[cntprei] {
-					cntprei++
-					for nr = range rniter {
-						if nr == cntpre[cntprei] {
-							if cntprei++; cntprei == len(cntpre) {
-								cntprei = 0
-								cptrcde()
+					if cntprei++; cntprei == len(cntpre) {
+						cntprei = 0
+						cptrcde()
+						for nr = range rniter {
+							if nr == cntpost[cntposti] {
+								cntposti++
 								for nr = range rniter {
 									if nr == cntpost[cntposti] {
-										cntposti++
-										for nr = range rniter {
-											if nr == cntpost[cntposti] {
-												if cntposti++; cntposti == len(cntpost) {
-													cntposti = 0
-													if len(cders) > 0 {
-														cptrcnt()
-													}
-													break
-												}
-												continue
+										if cntposti++; cntposti == len(cntpost) {
+											cntposti = 0
+											if len(cders) > 0 {
+												cptrcnt()
 											}
-											if cntposti > 0 {
-												cders = append(cders, cntpost[:cntposti]...)
-												cntposti = 0
-											}
-											cders = append(cders, nr)
+											break
 										}
-										break
+										continue
+									}
+									if cntposti > 0 {
+										cders = append(cders, cntpost[:cntposti]...)
+										cntposti = 0
 									}
 									cders = append(cders, nr)
 								}
 								break
 							}
+							cders = append(cders, nr)
 						}
-						if cntprei > 0 {
-							cptrcde()
-							cntrs = append(cntrs, cntpre[:cntprei]...)
-							cntposti = 0
-						}
-						cptrcde()
-						cntrs = append(cntrs, nr)
-						break
+						continue
 					}
+					pvr = nr
 					continue
 				}
 				cptrcde()
+				if cntprei > 0 {
+					cntrs = append(cntrs, cntpre[:cntprei]...)
+					cntprei = 0
+					pvr = 0
+				}
 				cntrs = append(cntrs, nr)
 			}
 			wrpup = true
