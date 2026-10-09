@@ -123,6 +123,11 @@ func main() {
 	}
 	if f != nil {
 		fmt.Println("loading config file", f.Name())
+	} else {
+		fmt.Println("no " + appname + "-config.json config file found")
+		fmt.Println("Example " + appname + "-config.json layout:")
+		fmt.Println(sampleconfig)
+		fmt.Println()
 	}
 	var confbfw snkio.BufferWriter
 	var lstnrs []net.Listener
