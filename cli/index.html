@@ -35,16 +35,16 @@ import { PI, add } from '/samplemath.js';
 //const { PI,add } = require('/samplemath.js');
     print(add(3,5));
     %><ul><%
-    for(const fi of fsys.list("/*.html")){
+    for(const fi of FS.List("/*.html")){
         %><li>{@fi.Path()@}</li><%
     }
 
     /*for(const k of Object.keys(UA)) {
         %><li>{@k@}</li><%
     }*/
-    %><li>{@ua.Browser()@}</li><%
+    %><li>{@UA.Browser()@}</li><%
     %></ul>
-    {@ua.OS()@} {@ua.IsTablet()@}
+    {@UA.OS()@} {@UA.IsTablet()@}
     <%for(var i=0;i<5;i++){%><::e-root::heading test="quest">BLU<% print((i+1),". "); %><text>Hello Snk</text></::e-root::heading><%}%>
 </body>
 </html>
