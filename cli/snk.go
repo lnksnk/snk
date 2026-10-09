@@ -128,6 +128,9 @@ func main() {
 		fmt.Println("no " + appname + "-config.json config file found")
 		fmt.Println("Example " + appname + "-config.json layout:")
 		fmt.Println(sampleconfig)
+
+		fmt.Println()
+		fmt.Println("create " + lastconpath)
 		if osfi, _ := os.Create(lastconpath); osfi != nil {
 			snkio.Fprint(osfi, sampleconfig)
 			osfi.Close()
