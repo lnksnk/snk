@@ -146,9 +146,12 @@ func main() {
 			conf.Resources = append(conf.Resources, ConfigResource{Path: "/", LocalRoot: defaultlocalpath})
 		}
 		conf.Load(func(cl ConfigListener) {
-			if ln, _ := net.Listen(cl.Network, cl.Addr); ln != nil {
+			if ln, lnerr := net.Listen(cl.Network, cl.Addr); ln != nil {
 				lstnrs = append(lstnrs, ln)
+			} else if lnerr != nil {
+				fmt.Println(lnerr.Error())
 			}
+
 		}, func(cr ConfigResource) {
 			fs.FSMap(cr.Path, cr.LocalRoot)
 		}, func(csc ConfigSqlConn) {
