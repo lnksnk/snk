@@ -12,6 +12,9 @@ func FSMap(fsroot, fslocalroot string) (err error) {
 		err = &fs.PathError{Op: "openFSFile", Path: "", Err: fmt.Errorf("invalid [RootFileSystem]")}
 		return
 	}
+	if fslocalroot != "" && fslocalroot[len(fslocalroot)-1] != '/' {
+		fslocalroot += "/"
+	}
 	GlobalFSLocalRoot.Store(fsroot, fslocalroot)
 	if fslocalroot == "" {
 		GlobalFSOpen.Store(fsroot, OpenFileSystemFunc(func(name string) (File, error) {
