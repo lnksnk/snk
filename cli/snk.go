@@ -19,8 +19,7 @@ import (
 	snkio "github.com/lnksnk/snk/io"
 	"github.com/lnksnk/snk/mime"
 	"github.com/lnksnk/snk/parameters"
-	"github.com/lnksnk/snk/serve"
-	"github.com/lnksnk/snk/serversent"
+	"github.com/lnksnk/snk/serve/fsserve"
 	snksql "github.com/lnksnk/snk/sql"
 	_ "github.com/lnksnk/snk/sql/driver/mssql"
 	_ "github.com/lnksnk/snk/sql/driver/mysql"
@@ -33,7 +32,6 @@ import (
 	"github.com/lnksnk/snk/ui"
 	"github.com/lnksnk/snk/ui/db"
 	"github.com/lnksnk/snk/w3css"
-	"github.com/lnksnk/snk/websocket"
 
 	"strings"
 	"syscall"
@@ -45,50 +43,19 @@ import (
 
 var sbkh = fssobek.SobekHandler()
 
-func ESDBEnv(ctx context.Context, vm *sobek.Runtime, params parameters.Parameters, fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem) map[string]any {
-	var frmtsqlqry = snksql.FormatQueryFunc(func(out io.Writer, name, driver, query string, a ...any) (err error) {
-		return sbkh.FormatQuery(vm, fsstat, fsopen, out, name, driver, query)
-	})
-	return map[string]any{
-		"Query": func(name string, query string, a ...any) (records func(func(snksql.Record, int64) bool), err error) {
-
-			if len(a) > 0 {
-				a = append([]any{frmtsqlqry}, a...)
-			}
-			if len(a) == 0 {
-				a = append(a, frmtsqlqry)
-			}
-			a = append(a, params)
-			var rws, rwserr = snksql.QueryContext(ctx, name, query, a...)
-			if err = rwserr; err != nil {
-				records = snksql.NumberedRecords(nil)
-				return
-			}
-			records = snksql.NumberedRecords(rws)
-			return
-		},
-		"Exec": func(name string, query string, a ...any) (any, error) {
-			if len(a) > 0 {
-				a = append([]any{frmtsqlqry}, a...)
-			}
-			if len(a) == 0 {
-				a = append(a, frmtsqlqry)
-			}
-			a = append(a, params)
-			return snksql.ExecContext(ctx, name, query, a...)
-		},
-		"Stats": func(name string) (stats any) {
-			return snksql.ConnStats(name)
-		},
-		"Conns": func() []string {
-			return snksql.ConnDefinitions()
-		},
-		"DefineConn": snksql.DefineConn,
-	}
+func ESVmSetupRequestContext(ctx context.Context, dh DbHandler, fs Fsys, vm *sobek.Runtime, params parameters.Parameters, ua useragent.UserAgent, vmsetup func(*sobek.Runtime, ...fst.VMItem)) {
+	vm.Set("escape", map[string]any{"url": map[string]any{"path": url.PathEscape, "query": url.QueryEscape}, "html": html.EscapeString})
+	vm.Set("unescape", map[string]any{"url": map[string]any{"path": url.PathUnescape, "query": url.QueryUnescape}, "html": html.EscapeString})
+	vm.Set("DB", dh)
+	vm.Set("FS", fs)
+	vmsetup(vm, []fst.VMItem{[]any{"params", params},
+		[]any{"UA", ua},
+		[]any{"uuid", func() string { return uuid.NewV7().String() }},
+		[]any{"uuid4", func() string { return uuid.NewV4().String() }},
+		[]any{"uuid7", func() string { return uuid.NewV7().String() }}}...)
 }
 
 func main() {
-
 	var apppath = strings.ReplaceAll(os.Args[0], "\\", "/")
 	var appname = apppath[strings.LastIndex(apppath, "/")+1:]
 	apppath = apppath[:strings.LastIndex(apppath, "/")+1]
@@ -154,7 +121,9 @@ func main() {
 			f, _ = os.Open(sourcepath + appname + "-conf.json")
 		}
 	}
-	fmt.Println("loading config file", f.Name())
+	if f != nil {
+		fmt.Println("loading config file", f.Name())
+	}
 	var confbfw snkio.BufferWriter
 	var lstnrs []net.Listener
 	if f != nil {
@@ -205,128 +174,33 @@ func main() {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	mainua := useragent.NewParser()
-	var hndlr = http.HandlerFunc(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var served, srverr = websocket.UpgradeAndServe(w, r, func(w http.ResponseWriter, r *http.Request) error {
 
-			return nil
-		})
-		if served {
+	var hndlr http.Handler
+	hndlr, _ = fsserve.ServeHttp(fsys, fsys, func(path string) {
+		if prgmtmplts := sbkh.ProgramModules(); prgmtmplts != nil && prgmtmplts.Exist(path) {
+			go prgmtmplts.Delete(path)
+		}
+	}, fsserve.ServeSTDFunc(func(fi fs.FileInfo, fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, mimeinfo mime.MimeInfo, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error) {
+		var f fs.File
+		if f, err = fsopen.Open(fi.Path()); f != nil {
+			defer f.Close()
+			snkio.Fprint(w, f)
 			return
 		}
-		if served, srverr = serversent.UpgradeAndServe(w, r, func(w http.ResponseWriter, r *http.Request) error {
-
-			return nil
-		}); served {
-			return
-		}
-		var params, _ = parameters.HTTPRequestParameters(r)
-		defer params.ClearAll()
-		var path = r.URL.Path
-		var mimeinfo = mime.ExtMimeInfo(path)
-		var fsts, err = fsys.Stat(path)
-		if ext := filepath.Ext(path); ext == ".babylon" {
-			ext += ""
-		}
-		var ua = mainua.Parse(r.UserAgent())
-		if ua.IsBot() {
-			w.Header().Set("Content-Length", "0")
-			return
-		}
-		defer func() {
-			if srverr != nil {
-				err = srverr
-			}
-			if x := recover(); x != nil {
-				if xs, xsk := x.(string); xsk {
-					err = fmt.Errorf("%s", xs)
-					return
-				}
-				err, _ = x.(error)
-			}
-			if err != nil {
-				if strings.Contains(err.Error(), "no such file or directory") {
-					err = nil
-					return
-				}
-			}
-			if flsr, _ := w.(http.Flusher); flsr != nil {
-				flsr.Flush()
-			}
-		}()
-		go func() {
-			<-r.Context().Done()
-			if err != nil {
-
-			}
-		}()
-		if fsts != nil {
-			if fsts.IsDir() {
-				for ext := range mime.UTF8exts {
-					if fsts, err = fsys.Stat(path + "index" + ext); fsts == nil {
-						if prgmtmplts := sbkh.ProgramModules(); prgmtmplts != nil && prgmtmplts.Exist(path) {
-							go prgmtmplts.Delete(path)
-						}
-						continue
-					}
-					path += "index" + ext
-					break
-				}
-			}
-			mimeinfo = mime.ExtMimeInfo(fsts.Name())
-			w.Header().Set("Content-Type", mimeinfo.Mimetype())
-			if mimeinfo.Media() {
-				var f fs.File
-				if f, err = fsys.Open(fsts.Path()); err == nil {
-					defer f.Close()
-					var rskrclsr, _ = f.(io.ReadSeekCloser)
-					serve.ServeHttpRange(w, r, rskrclsr, fsts.Size())
-					return
-				}
-				w.Header().Set("Content-Length", fmt.Sprintf("%d", 0))
-				return
-			}
-
-			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-			if !mime.UTF8exts[filepath.Ext(fsts.Path())] {
-				var f fs.File
-				if f, err = fsys.Open(path); f != nil {
-					defer f.Close()
-					snkio.Fprint(w, f)
-					return
-				}
-				w.Header().Set("Content-Type", mimeinfo[1])
-				w.Header().Set("Content-Length", "0")
-				return
-			}
-			fst.ServeHTTP(sbkh, w, r, fsts, fsys, fsys, func(vm *sobek.Runtime, r *http.Request, vmsetup func(*sobek.Runtime, ...fst.VMItem)) {
-				vm.Set("escape", map[string]any{"url": map[string]any{"path": url.PathEscape, "query": url.QueryEscape}, "html": html.EscapeString})
-				vm.Set("unescape", map[string]any{"url": map[string]any{"path": url.PathUnescape, "query": url.QueryUnescape}, "html": html.EscapeString})
-
-				vm.Set("hostip", func() string {
-					return r.Host
-				})
-				vmsetup(vm, []fst.VMItem{[]any{"params", params},
-					[]any{"ua", ua},
-					[]any{"fsys", map[string]any{
-						"list":   fsys.List,
-						"map":    fs.FSMap,
-						"set":    fsys.Set,
-						"stat":   fsys.Stat,
-						"open":   fsys.Open,
-						"append": fsys.Append}},
-					[]any{"uuid", func() string { return uuid.NewV7().String() }},
-					[]any{"uuid4", func() string { return uuid.NewV4().String() }},
-					[]any{"uuid7", func() string { return uuid.NewV7().String() }},
-					[]any{"DB", ESDBEnv(r.Context(), vm, params, fsys, fsys)}}...)
+		return
+	}), fsserve.ServeUTFFunc(func(fi fs.FileInfo, fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, mimeinfo mime.MimeInfo, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error) {
+		fst.ServeHTTP(sbkh, w, r, fi, fsstat, fsopen, func(vm *sobek.Runtime, r *http.Request, vmsetup func(*sobek.Runtime, ...fst.VMItem)) {
+			var db = InvokeDbHandler(r.Context(), snksql.FormatQueryFunc(func(out io.Writer, name, driver, query string, a ...any) (err error) {
+				return sbkh.FormatQuery(vm, fsstat, fsopen, out, name, driver, query)
+			}), params)
+			var fs = InvokeFSys(fsys, fs.FSMap, fsys, fsstat, fsopen, fsys)
+			vm.Set("hostip", func() string {
+				return r.Host
 			})
-			return
-		}
-		w.Header().Set("Content-Type", mimeinfo[1])
-		w.Header().Set("Content-Length", "0")
-	}))
+			ESVmSetupRequestContext(r.Context(), db, fs, vm, params, ua, vmsetup)
+		})
+		return
+	}), fsserve.UTF8Ext(".html"), fsserve.UTF8Ext(".js"), fsserve.UTF8Ext(".css"), fsserve.UTF8Ext(".json"))
 	for _, ln := range lstnrs {
 		go http.Serve(ln, hndlr)
 	}
