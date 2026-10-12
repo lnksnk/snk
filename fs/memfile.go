@@ -20,6 +20,45 @@ type memfile struct {
 	mbw snkio.BufferWriter
 }
 
+func (m *memfile) WriteTo(w io.Writer) (n int64, err error) {
+	if lck, mbw := m.lck, m.mbw; lck != nil && mbw != nil {
+		lck.RLock()
+		defer lck.RUnlock()
+		n, err = mbw.WriteTo(w)
+		return
+	}
+	return
+}
+
+func (m *memfile) ReadFrom(r io.Reader) (n int64, err error) {
+	if lck, mbw, mfi := m.lck, m.mbw, m.mfi; lck != nil && mfi != nil {
+		lck.Lock()
+		defer lck.Unlock()
+		var bfw snkio.BufferWriter
+		if mbw != nil {
+			// may need to implement truncate
+			if n, err = mbw.ReadFrom(r); err == nil {
+				m.mfi = GenFileInfo(mfi.Path(), mfi.Base(), mbw.Size(), false, time.Now())
+			}
+			return
+		}
+		if bfw, err = snkio.WriterBuffer(r); err != nil {
+			if bfw != nil {
+				bfw.Close()
+				return
+			}
+			return
+		}
+		if mbw = bfw; mbw != nil {
+			m.mbw = mbw
+			m.mfi = GenFileInfo(mfi.Path(), mfi.Base(), mbw.Size(), false, time.Now())
+			return mbw.Size(), nil
+		}
+		m.mfi = GenFileInfo(mfi.Path(), mfi.Base(), 0, false, time.Now())
+	}
+	return
+}
+
 func (m *memfile) Close() {
 	if m == nil {
 		return
@@ -56,49 +95,72 @@ func (m *memfile) File() (f File) {
 }
 
 func (m *memfile) Set(path, root string, a ...any) (err error) {
-	if lck, mfw := m.lck, m.mbw; lck != nil {
+	if lck, mbw := m.lck, m.mbw; lck != nil {
 		lck.Lock()
 		defer lck.Unlock()
+		if len(a) == 0 {
+			if mbw != nil {
+				if !mbw.Empty() {
+					mbw.Reset()
+				}
+				m.mfi = GenFileInfo(path, root, mbw.Size(), false, time.Now())
+				return
+			}
+			m.mfi = GenFileInfo(path, root, 0, false, time.Now())
+			return
+		}
 		var bfw snkio.BufferWriter
-		if bfw, err = snkio.WriterBuffer(a...); err != nil {
-			if bfw != nil {
-				bfw.Close()
+		if mbw != nil {
+			// may need to implement truncate
+			mbw.Reset()
+			if err = mbw.Print(a...); err == nil {
+				m.mfi = GenFileInfo(path, root, mbw.Size(), false, time.Now())
 			}
 			return
 		}
-		if mfw != nil {
-			mfw.Close()
-			mfw = bfw
-			m.mbw = mfw
+		if bfw, err = snkio.WriterBuffer(a...); err != nil {
+			if bfw != nil {
+				bfw.Close()
+				return
+			}
+			return
 		}
-		if mfw == nil {
-			mfw = bfw
-			m.mbw = mfw
+		if mbw = bfw; mbw != nil {
+			m.mbw = mbw
+			m.mfi = GenFileInfo(path, root, mbw.Size(), false, time.Now())
+			return nil
 		}
-		m.mfi = GenFileInfo(path, root, mfw.Size(), false, time.Now())
+		m.mfi = GenFileInfo(path, root, 0, false, time.Now())
 	}
 	return
 }
 
 func (m *memfile) Append(path, root string, a ...any) (err error) {
-	if lck, mfw := m.lck, m.mbw; lck != nil {
+	if lck, mbw := m.lck, m.mbw; lck != nil && len(a) > 0 {
 		lck.Lock()
 		defer lck.Unlock()
+
 		var bfw snkio.BufferWriter
-		if bfw, err = snkio.WriterBuffer(a...); err != nil {
-			if bfw != nil {
-				bfw.Close()
+		if mbw != nil {
+			// may need to implement truncate
+			if err = mbw.Print(a...); err == nil {
+				m.mfi = GenFileInfo(m.mfi.Path(), m.mfi.Base(), mbw.Size(), false, time.Now())
 			}
 			return
 		}
-		if mfw != nil {
-			bfw.WriteTo(mfw)
+		if bfw, err = snkio.WriterBuffer(a...); err != nil {
+			if bfw != nil {
+				bfw.Close()
+				return
+			}
+			return
 		}
-		if mfw == nil {
-			mfw = bfw
-			m.mbw = mfw
+		if mbw = bfw; mbw != nil {
+			m.mbw = mbw
+			m.mfi = GenFileInfo(path, root, mbw.Size(), false, time.Now())
+			return nil
 		}
-		m.mfi = GenFileInfo(path, root, mfw.Size(), false, time.Now())
+		m.mfi = GenFileInfo(path, root, 0, false, time.Now())
 	}
 	return
 }
