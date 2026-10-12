@@ -704,3 +704,4 @@ Zzazz Deck 	application/vnd.zzazz.deck+xml 	.zaz 	IANA: Zzazz
 Babylon Model	model/vnd.babylonjs.v3+json	.babylon	3D Modal
 Javascript Map	application/json	.map	JS Map
 MPEG-1 Layer III and MPEG-2 Layer III	audio/mpeg	.mp3	Mpeg audio
+Free Lossless Audio Codec	audio/flac	.flac	Flac audio
