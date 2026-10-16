@@ -9,7 +9,6 @@ require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/grafana/sobek v0.0.0-20261014141730-681dacdd9a92
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/lnksnk/snk/es v0.0.0-20261016072330-ae6325f5024a
 	github.com/medama-io/go-useragent v1.2.5
 	github.com/microsoft/go-mssqldb v1.11.2
 	github.com/pkg/errors v0.9.1
@@ -25,14 +24,12 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.10.1 // indirect
 	github.com/boyter/go-string v1.0.5 // indirect
-	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/google/pprof v0.0.0-20261014150452-c3b4e57cab2c // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/ianlancetaylor/demangle v0.0.0-20261012173340-cbb8aaea4290 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.3 // indirect
