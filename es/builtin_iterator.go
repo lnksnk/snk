@@ -2,6 +2,7 @@ package es
 
 import (
 	"math"
+	"slices"
 
 	"github.com/lnksnk/snk/es/unistring"
 )
@@ -168,8 +169,8 @@ func (ir *iteratorRecord) stepDone() bool {
 // If ex is not nil, any errors thrown while closing are ignored and ex is re-thrown, otherwise the first error
 // (if any) is thrown after all the iterators have been closed.
 func closeIterators(iters []*iteratorRecord, ex interface{}) {
-	for i := len(iters) - 1; i >= 0; i-- {
-		if iter := iters[i]; iter != nil {
+	for _, iter := range slices.Backward(iters) {
+		if iter := iter; iter != nil {
 			if ex != nil {
 				_ = tryFunc(iter.returnIter)
 			} else {
@@ -493,7 +494,9 @@ func (r *Runtime) iterator_concat(call FunctionCall) Value {
 		openMethod func(FunctionCall) Value
 	}
 	iterables := make([]iterable, len(call.Arguments))
-	for i, item := range call.Arguments {
+	var item Value
+	for i := range call.Arguments {
+		item = call.Arguments[i]
 		obj, ok := item.(*Object)
 		if !ok {
 			panic(r.NewTypeError("%s is not an object", item.String()))
@@ -588,11 +591,13 @@ func (r *Runtime) iteratorZip(iters []*iteratorRecord, mode iteratorZipMode, pad
 			return nil, false
 		}
 		results := make([]Value, len(iters))
-		for i, iter := range iters {
-			if iter == nil {
+		var iter *iteratorRecord
+		for i := range iters {
+			if iters[i] == nil {
 				results[i] = padding[i]
 				continue
 			}
+			iter = iters[i]
 			var value Value
 			var ok bool
 			if ex := tryFunc(func() {
@@ -627,8 +632,8 @@ func (r *Runtime) iteratorZip(iters []*iteratorRecord, mode iteratorZipMode, pad
 					return nil, false
 				}
 				open := false
-				for _, iter := range iters {
-					if iter != nil {
+				for i := range iters {
+					if iters[i] != nil {
 						open = true
 						break
 					}
@@ -739,8 +744,8 @@ func (r *Runtime) iterator_zipKeyed(call FunctionCall) Value {
 	}
 	return r.iteratorZip(iters, mode, padding, func(results []Value) Value {
 		obj := r.newBaseObject(nil, classObject).val
-		for i, key := range keys {
-			createDataPropertyOrThrow(obj, key, results[i])
+		for i := range keys {
+			createDataPropertyOrThrow(obj, keys[i], results[i])
 		}
 		return obj
 	})

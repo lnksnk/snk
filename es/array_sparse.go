@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/bits"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -35,8 +36,8 @@ func (a *sparseArrayObject) _setLengthInt(l uint32, throw bool) bool {
 	if l <= a.length {
 		if a.propValueCount > 0 {
 			// Slow path
-			for i := len(a.items) - 1; i >= 0; i-- {
-				item := a.items[i]
+			var item sparseArrayItem
+			for _, item = range slices.Backward(a.items) {
 				if item.idx < l {
 					break
 				}
@@ -257,15 +258,15 @@ func (a *sparseArrayObject) iterateStringKeys() iterNextFunc {
 
 func (a *sparseArrayObject) stringKeys(all bool, accum []Value) []Value {
 	if all {
-		for _, item := range a.items {
-			accum = append(accum, asciiString(strconv.FormatUint(uint64(item.idx), 10)))
+		for i := range a.items {
+			accum = append(accum, asciiString(strconv.FormatUint(uint64(a.items[i].idx), 10)))
 		}
 	} else {
-		for _, item := range a.items {
-			if prop, ok := item.value.(*valueProperty); ok && !prop.enumerable {
+		for i := range a.items {
+			if prop, ok := a.items[i].value.(*valueProperty); ok && !prop.enumerable {
 				continue
 			}
-			accum = append(accum, asciiString(strconv.FormatUint(uint64(item.idx), 10)))
+			accum = append(accum, asciiString(strconv.FormatUint(uint64(a.items[i].idx), 10)))
 		}
 	}
 
@@ -274,8 +275,8 @@ func (a *sparseArrayObject) stringKeys(all bool, accum []Value) []Value {
 
 func (a *sparseArrayObject) setValues(values []Value, objCount int) {
 	a.items = make([]sparseArrayItem, 0, objCount)
-	for i, val := range values {
-		if val != nil {
+	for i := range values {
+		if val := values[i]; val != nil {
 			a.items = append(a.items, sparseArrayItem{
 				idx:   uint32(i),
 				value: val,
@@ -436,7 +437,9 @@ func (a *sparseArrayObject) export(ctx *objectExportCtx) interface{} {
 	arr := make([]interface{}, a.length)
 	ctx.put(a.val, arr)
 	var prevIdx uint32
-	for _, item := range a.items {
+	var item sparseArrayItem
+	for i := range a.items {
+		item = a.items[i]
 		idx := item.idx
 		for i := prevIdx; i < idx; i++ {
 			if a.prototype != nil {
@@ -512,7 +515,9 @@ func (a *sparseArrayObject) exportToArrayOrSlice(dst reflect.Value, typ reflect.
 			dst.Set(reflect.MakeSlice(typ, l, l))
 		}
 		ctx.putTyped(a.val, typ, dst.Interface())
-		for _, item := range a.items {
+		var item sparseArrayItem
+		for im := range a.items {
+			item = a.items[im]
 			idx := item.idx
 			i := toIntStrict(int64(idx))
 			if i >= l {

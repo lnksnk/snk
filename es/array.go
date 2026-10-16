@@ -561,8 +561,8 @@ func (a *arrayObject) exportToArrayOrSlice(dst reflect.Value, typ reflect.Type, 
 
 func (a *arrayObject) setValuesFromSparse(items []sparseArrayItem, newMaxIdx int) {
 	a.values = make([]Value, newMaxIdx+1)
-	for _, item := range items {
-		a.values[item.idx] = item.value
+	for i := range items {
+		a.values[items[i].idx] = items[i].value
 	}
 	a.objCount = len(items)
 }

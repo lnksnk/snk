@@ -71,8 +71,8 @@ func (r *Runtime) builtin_newWeakSet(args []Value, newTarget *Object) *Object {
 			if adder == r.global.weakSetAdder {
 				ir := r.getIterator(arg, nil)
 				if stdArr != nil && ir.nextRes != nil {
-					for _, v := range stdArr.values {
-						wso.s.set(r.weakSetValueRefs(v), nil)
+					for i := range stdArr.values {
+						wso.s.set(r.weakSetValueRefs(stdArr.values[i]), nil)
 					}
 				} else {
 					ir.iterate(func(item Value) {
@@ -86,8 +86,8 @@ func (r *Runtime) builtin_newWeakSet(args []Value, newTarget *Object) *Object {
 				}
 				ir := r.getIterator(arg, nil)
 				if stdArr != nil && ir.nextRes != nil {
-					for _, item := range stdArr.values {
-						adderFn(FunctionCall{This: o, Arguments: []Value{item}})
+					for i := range stdArr.values {
+						adderFn(FunctionCall{This: o, Arguments: []Value{stdArr.values[i]}})
 					}
 				} else {
 					ir.iterate(func(item Value) {

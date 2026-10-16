@@ -22,8 +22,8 @@ func (r *Runtime) functionCtor(args []Value, proto *Object, async, generator boo
 	}
 	if len(args) > 1 {
 		ar := args[:len(args)-1]
-		for i, arg := range ar {
-			sb.WriteString(arg.toString())
+		for i := range ar {
+			sb.WriteString(ar[i].toString())
 			if i < len(ar)-1 {
 				sb.WriteRune(',')
 			}
@@ -82,7 +82,7 @@ func (r *Runtime) createListFromArrayLike(a Value) []Value {
 	}
 	l := toLength(o.self.getStr("length", nil))
 	res := make([]Value, 0, l)
-	for k := int64(0); k < l; k++ {
+	for k := range l {
 		res = append(res, nilSafe(o.self.getIdx(valueInt(k), nil)))
 	}
 	return res

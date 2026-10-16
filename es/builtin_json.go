@@ -143,7 +143,7 @@ func (r *Runtime) builtinJSON_reviveWalk(reviver func(FunctionCall) Value, holde
 	if object, ok := value.(*Object); ok {
 		if isArray(object) {
 			length := toLength(object.self.getStr("length", nil))
-			for index := int64(0); index < length; index++ {
+			for index := range length {
 				name := asciiString(strconv.FormatInt(index, 10))
 				value := r.builtinJSON_reviveWalk(reviver, object, name)
 				if value == _undefined {
@@ -368,8 +368,8 @@ func (ctx *_builtinJSON_stringifyContext) str(key Value, holder *Object) bool {
 			ctx.buf.WriteString(value1.self.getStr("rawJSON", nil).String())
 			return true
 		}
-		for _, object := range ctx.stack {
-			if value1.SameAs(object) {
+		for i := range ctx.stack {
+			if value1.SameAs(ctx.stack[i]) {
 				ctx.r.typeErrorResult(true, "Converting circular structure to JSON")
 			}
 		}
@@ -412,7 +412,7 @@ func (ctx *_builtinJSON_stringifyContext) ja(array *Object) {
 		separator = ","
 	}
 
-	for i := int64(0); i < length; i++ {
+	for i := range length {
 		if !ctx.str(asciiString(strconv.FormatInt(i, 10)), array) {
 			ctx.buf.WriteString("null")
 		}

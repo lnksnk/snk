@@ -131,8 +131,8 @@ func (r *Runtime) string_fromcharcode(call FunctionCall) Value {
 
 func (r *Runtime) string_fromcodepoint(call FunctionCall) Value {
 	var sb StringBuilder
-	for _, arg := range call.Arguments {
-		num := arg.ToNumber()
+	for i := range call.Arguments {
+		num := call.Arguments[i].ToNumber()
 		var c rune
 		if numInt, ok := num.(valueInt); ok {
 			if numInt < 0 || numInt > utf8.MaxRune {
@@ -240,8 +240,8 @@ func (r *Runtime) stringproto_concat(call FunctionCall) Value {
 		totalLen = u.Length()
 		allAscii = false
 	}
-	for i, arg := range call.Arguments {
-		a, u := devirtualizeString(arg.toString())
+	for i := range call.Arguments {
+		a, u := devirtualizeString(call.Arguments[i].toString())
 		if u != nil {
 			allAscii = false
 			totalLen += u.Length()
@@ -255,8 +255,8 @@ func (r *Runtime) stringproto_concat(call FunctionCall) Value {
 	if allAscii {
 		var buf strings.Builder
 		buf.Grow(toStringLen(totalLen))
-		for _, s := range strs {
-			buf.WriteString(s.String())
+		for i := range strs {
+			buf.WriteString(strs[i].String())
 		}
 		return asciiString(buf.String())
 	}
@@ -264,10 +264,12 @@ func (r *Runtime) stringproto_concat(call FunctionCall) Value {
 	buf := make([]uint16, totalLen+1)
 	buf[0] = unistring.BOM
 	pos := 1
-	for _, s := range strs {
+	var s String
+	for is := range strs {
+		s = strs[is]
 		switch s := s.(type) {
 		case asciiString:
-			for i := 0; i < len(s); i++ {
+			for i := range len(s) {
 				buf[pos] = uint16(s[i])
 				pos++
 			}
@@ -300,7 +302,7 @@ func (r *Runtime) stringproto_endsWith(call FunctionCall) Value {
 	if start < 0 {
 		return valueFalse
 	}
-	for i := 0; i < searchLength; i++ {
+	for i := range searchLength {
 		if s.CharAt(start+i) != searchStr.CharAt(i) {
 			return valueFalse
 		}
@@ -568,7 +570,7 @@ func (r *Runtime) stringproto_repeat(call FunctionCall) Value {
 	if u == nil {
 		var sb strings.Builder
 		sb.Grow(safeMul(len(a), num))
-		for i := 0; i < num; i++ {
+		for range num {
 			sb.WriteString(string(a))
 		}
 		return asciiString(sb.String())
@@ -576,7 +578,7 @@ func (r *Runtime) stringproto_repeat(call FunctionCall) Value {
 
 	var sb unicodeStringBuilder
 	sb.Grow(safeMul(u.Length(), num))
-	for i := 0; i < num; i++ {
+	for range num {
 		sb.writeUnicodeString(u)
 	}
 	return sb.String()
@@ -605,13 +607,15 @@ func (r *Runtime) stringReplace(s String, found []regexpResult, newstring String
 	lastIndex := 0
 	lengthS := s.Length()
 	if rcall != nil {
-		for _, item := range found {
+		var item regexpResult
+		for im := range found {
+			item = found[im]
 			if item.indexes[0] != lastIndex {
 				buf.WriteSubstring(s, lastIndex, item.indexes[0])
 			}
 			matchCount := len(item.indexes) / 2
 			argumentList := make([]Value, matchCount+2, matchCount+3)
-			for index := 0; index < matchCount; index++ {
+			for index := range matchCount {
 				offset := 2 * index
 				if item.indexes[offset] != -1 {
 					if u == nil {
@@ -637,7 +641,9 @@ func (r *Runtime) stringReplace(s String, found []regexpResult, newstring String
 			lastIndex = item.indexes[1]
 		}
 	} else {
-		for _, item := range found {
+		var item regexpResult
+		for im := range found {
+			item = found[im]
 			if item.indexes[0] != lastIndex {
 				buf.WriteString(s.Substring(lastIndex, item.indexes[0]))
 			}
@@ -858,8 +864,8 @@ func (r *Runtime) stringproto_split(call FunctionCall) Value {
 				split = split[:limit]
 			}
 			valueArray = make([]Value, len(split))
-			for index, value := range split {
-				valueArray[index] = asciiString(value)
+			for index := range split {
+				valueArray[index] = asciiString(split[index])
 			}
 		} else {
 			// Unicode separator will never match an ASCII string
@@ -946,7 +952,7 @@ func (r *Runtime) stringproto_startsWith(call FunctionCall) Value {
 	if int64(searchLength+start) > l {
 		return valueFalse
 	}
-	for i := 0; i < searchLength; i++ {
+	for i := range searchLength {
 		if s.CharAt(start+i) != searchStr.CharAt(i) {
 			return valueFalse
 		}

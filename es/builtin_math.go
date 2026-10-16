@@ -81,7 +81,9 @@ func (r *Runtime) math_hypot(call FunctionCall) Value {
 	var max float64
 	var hasNaN bool
 	absValues := make([]float64, 0, len(call.Arguments))
-	for _, v := range call.Arguments {
+	var v Value
+	for i := range call.Arguments {
+		v = call.Arguments[i]
 		arg := nilSafe(v).ToFloat()
 		if math.IsNaN(arg) {
 			hasNaN = true
@@ -141,8 +143,8 @@ func (r *Runtime) math_log2(call FunctionCall) Value {
 func (r *Runtime) math_max(call FunctionCall) Value {
 	result := math.Inf(-1)
 	args := call.Arguments
-	for i, arg := range args {
-		n := nilSafe(arg).ToFloat()
+	for i := range args {
+		n := nilSafe(args[i]).ToFloat()
 		if math.IsNaN(n) {
 			args = args[i+1:]
 			goto NaNLoop
@@ -154,8 +156,8 @@ func (r *Runtime) math_max(call FunctionCall) Value {
 
 NaNLoop:
 	// All arguments still need to be coerced to number according to the specs.
-	for _, arg := range args {
-		nilSafe(arg).ToFloat()
+	for i := range args {
+		nilSafe(args[i]).ToFloat()
 	}
 	return _NaN
 }
@@ -163,8 +165,8 @@ NaNLoop:
 func (r *Runtime) math_min(call FunctionCall) Value {
 	result := math.Inf(1)
 	args := call.Arguments
-	for i, arg := range args {
-		n := nilSafe(arg).ToFloat()
+	for i := range args {
+		n := nilSafe(args[i]).ToFloat()
 		if math.IsNaN(n) {
 			args = args[i+1:]
 			goto NaNLoop
@@ -176,8 +178,8 @@ func (r *Runtime) math_min(call FunctionCall) Value {
 
 NaNLoop:
 	// All arguments still need to be coerced to number according to the specs.
-	for _, arg := range args {
-		nilSafe(arg).ToFloat()
+	for i := range args {
+		nilSafe(args[i]).ToFloat()
 	}
 	return _NaN
 }

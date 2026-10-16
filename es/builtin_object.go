@@ -216,8 +216,8 @@ func (r *Runtime) _defineProperties(o *Object, p Value) {
 			prop: r.toPropertyDescriptor(item.value),
 		})
 	}
-	for _, prop := range list {
-		o.defineOwnProperty(prop.name, prop.prop, true)
+	for i := range list {
+		o.defineOwnProperty(list[i].name, list[i].prop, true)
 	}
 }
 
@@ -613,8 +613,8 @@ func (r *Runtime) groupBy(items, callback Value, propertyKeys bool) (keys []Valu
 func (r *Runtime) object_groupBy(call FunctionCall) Value {
 	keys, groups := r.groupBy(call.Argument(0), call.Argument(1), true)
 	obj := r.newBaseObject(nil, classObject).val
-	for i, key := range keys {
-		createDataPropertyOrThrow(obj, key, r.newArrayValues(groups[i]))
+	for i := range keys {
+		createDataPropertyOrThrow(obj, keys[i], r.newArrayValues(groups[i]))
 	}
 	return obj
 }

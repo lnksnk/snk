@@ -133,6 +133,22 @@ func (r *Runtime) createSymbolProto(val *Object) objectImpl {
 	return o
 }
 
+var creatableSymbols = []*Symbol{
+	SymAsyncIterator,
+	SymHasInstance,
+	SymIsConcatSpreadable,
+	SymIterator,
+	SymMatch,
+	SymMatchAll,
+	SymReplace,
+	SymSearch,
+	SymSpecies,
+	SymSplit,
+	SymToPrimitive,
+	SymToStringTag,
+	SymUnscopables,
+}
+
 func (r *Runtime) createSymbol(val *Object) objectImpl {
 	o := r.newNativeFuncAndConstruct(val, r.builtin_symbol, func(args []Value, newTarget *Object) *Object {
 		panic(r.NewTypeError("Symbol is not a constructor"))
@@ -141,7 +157,7 @@ func (r *Runtime) createSymbol(val *Object) objectImpl {
 	o._putProp("for", r.newNativeFunc(r.symbol_for, "for", 1), true, false, true)
 	o._putProp("keyFor", r.newNativeFunc(r.symbol_keyfor, "keyFor", 1), true, false, true)
 
-	for _, s := range []*Symbol{
+	creatableSymbols := []*Symbol{
 		SymAsyncIterator,
 		SymHasInstance,
 		SymIsConcatSpreadable,
@@ -155,10 +171,12 @@ func (r *Runtime) createSymbol(val *Object) objectImpl {
 		SymToPrimitive,
 		SymToStringTag,
 		SymUnscopables,
-	} {
-		n := s.desc.(asciiString)
+	}
+
+	for i := range creatableSymbols {
+		n := creatableSymbols[i].desc.(asciiString)
 		n = n[len("Symbol."):]
-		o._putProp(unistring.String(n), s, false, false, false)
+		o._putProp(unistring.String(n), creatableSymbols[i], false, false, false)
 	}
 
 	return o

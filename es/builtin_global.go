@@ -240,7 +240,7 @@ func (r *Runtime) builtin_escape(call FunctionCall) Value {
 	s := call.Argument(0).toString()
 	var sb strings.Builder
 	l := s.Length()
-	for i := 0; i < l; i++ {
+	for i := range l {
 		r := s.CharAt(i)
 		if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' ||
 			r == '@' || r == '*' || r == '_' || r == '+' || r == '-' || r == '.' || r == '/' {
@@ -307,8 +307,8 @@ func (r *Runtime) builtin_unescape(call FunctionCall) Value {
 		if r >= utf8.RuneSelf && !unicode {
 			unicodeBuf = make([]uint16, 1, l+1)
 			unicodeBuf[0] = unistring.BOM
-			for _, b := range asciiBuf {
-				unicodeBuf = append(unicodeBuf, uint16(b))
+			for i := range asciiBuf {
+				unicodeBuf = append(unicodeBuf, uint16(asciiBuf[i]))
 			}
 			asciiBuf = nil
 			unicode = true
@@ -566,7 +566,7 @@ func init() {
 		uriReserved[c] = true
 	}
 
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		if uriUnescaped[i] || uriReserved[i] {
 			uriReservedUnescapedHash[i] = true
 		}
