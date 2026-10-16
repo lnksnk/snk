@@ -1043,7 +1043,8 @@ func parseStringLiteral(literal string, length int, unicode, strict bool) (unist
 					if len(str) < size {
 						return "", fmt.Sprintf("invalid escape: \\%s: len(%q) != %d", string(chr), str, size)
 					}
-					for j := 0; j < size; j++ {
+					//  j := 0; j < size; j++
+					for j := range size {
 						decimal, ok := hex2decimal(str[j])
 						if !ok {
 							return "", fmt.Sprintf("invalid escape: \\%s: %q", string(chr), str[:size])

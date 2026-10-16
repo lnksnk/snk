@@ -125,14 +125,10 @@ func _newParser(filename, src string, base int, opts ...Option) *_parser {
 		base:   base,
 		file:   file.NewFile(filename, src, base),
 	}
-	for _, opt := range opts {
-		opt(&p.opts)
+	for i := range opts {
+		opts[i](&p.opts)
 	}
 	return p
-}
-
-func newParser(filename, src string) *_parser {
-	return _newParser(filename, src, 1)
 }
 
 func ReadSource(filename string, src interface{}) ([]byte, error) {

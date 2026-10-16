@@ -174,7 +174,9 @@ func (self *_parser) parseSuperProperty() ast.Expression {
 func (self *_parser) reinterpretSequenceAsArrowFuncParams(list []ast.Expression) *ast.ParameterList {
 	firstRestIdx := -1
 	params := make([]*ast.Binding, 0, len(list))
-	for i, item := range list {
+	var item ast.Expression
+	for i := range list {
+		item = list[i]
 		if _, ok := item.(*ast.SpreadElement); ok {
 			if firstRestIdx == -1 {
 				firstRestIdx = i
@@ -1518,7 +1520,9 @@ func (self *_parser) checkComma(from, to file.Idx) {
 func (self *_parser) reinterpretAsArrayAssignmentPattern(left *ast.ArrayLiteral) ast.Expression {
 	value := left.Value
 	var rest ast.Expression
-	for i, item := range value {
+	var item ast.Expression
+	for i := range value {
+		item = value[i]
 		if spread, ok := item.(*ast.SpreadElement); ok {
 			if i != len(value)-1 {
 				self.error(item.Idx0(), "Rest element must be last element")
@@ -1540,7 +1544,9 @@ func (self *_parser) reinterpretAsArrayAssignmentPattern(left *ast.ArrayLiteral)
 }
 
 func (self *_parser) reinterpretArrayAssignPatternAsBinding(pattern *ast.ArrayPattern) *ast.ArrayPattern {
-	for i, item := range pattern.Elements {
+	var item ast.Expression
+	for i := range pattern.Elements {
+		item = pattern.Elements[i]
 		pattern.Elements[i] = self.reinterpretAsDestructBindingTarget(item)
 	}
 	if pattern.Rest != nil {
@@ -1552,7 +1558,9 @@ func (self *_parser) reinterpretArrayAssignPatternAsBinding(pattern *ast.ArrayPa
 func (self *_parser) reinterpretAsArrayBindingPattern(left *ast.ArrayLiteral) ast.BindingTarget {
 	value := left.Value
 	var rest ast.Expression
-	for i, item := range value {
+	var item ast.Expression
+	for i := range value {
+		item = value[i]
 		if spread, ok := item.(*ast.SpreadElement); ok {
 			if i != len(value)-1 {
 				self.error(item.Idx0(), "Rest element must be last element")
@@ -1582,7 +1590,9 @@ func (self *_parser) parseObjectBindingPattern() ast.BindingTarget {
 }
 
 func (self *_parser) reinterpretArrayObjectPatternAsBinding(pattern *ast.ObjectPattern) *ast.ObjectPattern {
-	for _, prop := range pattern.Properties {
+	var prop ast.Property
+	for i := range pattern.Properties {
+		prop = pattern.Properties[i]
 		if keyed, ok := prop.(*ast.PropertyKeyed); ok {
 			keyed.Value = self.reinterpretAsBindingElement(keyed.Value)
 		}
@@ -1596,7 +1606,9 @@ func (self *_parser) reinterpretArrayObjectPatternAsBinding(pattern *ast.ObjectP
 func (self *_parser) reinterpretAsObjectBindingPattern(expr *ast.ObjectLiteral) ast.BindingTarget {
 	var rest ast.Expression
 	value := expr.Value
-	for i, prop := range value {
+	var prop ast.Property
+	for i := range value {
+		prop = value[i]
 		ok := false
 		switch prop := prop.(type) {
 		case *ast.PropertyKeyed:
@@ -1632,7 +1644,9 @@ func (self *_parser) reinterpretAsObjectBindingPattern(expr *ast.ObjectLiteral) 
 func (self *_parser) reinterpretAsObjectAssignmentPattern(l *ast.ObjectLiteral) ast.Expression {
 	var rest ast.Expression
 	value := l.Value
-	for i, prop := range value {
+	var prop ast.Property
+	for i := range value {
+		prop = value[i]
 		ok := false
 		switch prop := prop.(type) {
 		case *ast.PropertyKeyed:
