@@ -1,6 +1,6 @@
 # parser
 --
-    import "github.com/grafana/sobek/parser"
+    import "github.com/lnksnk/snk/es/parser"
 
 Package parser implements a parser for JavaScript. Borrowed from https://github.com/robertkrimen/otto/tree/master/parser
 
