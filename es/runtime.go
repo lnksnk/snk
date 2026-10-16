@@ -443,6 +443,7 @@ func (r *Runtime) createIterProto(val *Object) objectImpl {
 	o := newBaseObjectObj(val, r.global.ObjectPrototype, classObject)
 
 	o._putSym(SymIterator, valueProp(r.newNativeFunc(r.returnThis, "[Symbol.iterator]", 0), true, false, true))
+	r.addIteratorHelpers(o)
 	return o
 }
 
@@ -1129,6 +1130,27 @@ func toInt16(v Value) int16 {
 	return 0
 }
 
+// floatToUint32 implements ECMAScript ToUint32 for float64 values.
+func floatToUint32(f float64) uint32 {
+	b := math.Float64bits(f)
+	exp := int(b>>52&0x7ff) - 1075 // value = mant * 2^exp
+	mant := b&(1<<52-1) | 1<<52
+
+	var r uint64
+	switch {
+	case exp >= 32: // multiple of 2^32; also Inf/NaN (exp = 972)
+		r = 0
+	case exp >= 0:
+		r = mant << uint(exp) // high bits wrap away, low 32 are exact
+	default:
+		r = mant >> uint(-exp) // truncates toward zero; Go gives 0 for shifts >= 64
+	}
+	if int64(b) < 0 {
+		r = -r
+	}
+	return uint32(r)
+}
+
 func toUint16(v Value) uint16 {
 	v = v.ToNumber()
 	if i, ok := v.(valueInt); ok {
@@ -1136,10 +1158,7 @@ func toUint16(v Value) uint16 {
 	}
 
 	if f, ok := v.(valueFloat); ok {
-		f := float64(f)
-		if !math.IsNaN(f) && !math.IsInf(f, 0) {
-			return uint16(int64(f))
-		}
+		return uint16(floatToUint32(float64(f)))
 	}
 	return 0
 }
@@ -1151,10 +1170,7 @@ func toInt32(v Value) int32 {
 	}
 
 	if f, ok := v.(valueFloat); ok {
-		f := float64(f)
-		if !math.IsNaN(f) && !math.IsInf(f, 0) {
-			return int32(int64(f))
-		}
+		return int32(floatToUint32(float64(f)))
 	}
 	return 0
 }
@@ -1166,10 +1182,7 @@ func toUint32(v Value) uint32 {
 	}
 
 	if f, ok := v.(valueFloat); ok {
-		f := float64(f)
-		if !math.IsNaN(f) && !math.IsInf(f, 0) {
-			return uint32(int64(f))
-		}
+		return floatToUint32(float64(f))
 	}
 	return 0
 }
@@ -1298,6 +1311,22 @@ func toIntStrict(i int64) int {
 		}
 	}
 	return int(i)
+}
+
+func safeMul(left, right int) int {
+	res := left * right
+	// check for overflow
+	if left == 0 || right == 0 || res/left == right {
+		return res
+	}
+	panic(rangeError("Integer overflow"))
+}
+
+func toStringLen(n int) int {
+	if n < 0 {
+		panic(rangeError("Invalid string length"))
+	}
+	return n
 }
 
 func toIntClamp(i int64) int {
@@ -1959,6 +1988,9 @@ func (r *Runtime) toValue(i interface{}, origValue reflect.Value) Value {
 
 	switch value.Kind() {
 	case reflect.Map:
+		if value.IsNil() {
+			return _null
+		}
 		if value.Type().NumMethod() == 0 {
 			switch value.Type().Key().Kind() {
 			case reflect.String, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
@@ -2012,6 +2044,9 @@ func (r *Runtime) toValue(i interface{}, origValue reflect.Value) Value {
 		obj.self = a
 		return obj
 	case reflect.Func:
+		if value.IsNil() {
+			return _null
+		}
 		return r.newWrappedFunc(value)
 	}
 
@@ -2852,6 +2887,69 @@ func (r *Runtime) getOptionalIterator(obj Value, method func(FunctionCall) Value
 	return
 }
 
+func (r *Runtime) getAsyncIterator(obj Value) *iteratorRecord {
+	if method := toMethod(r.getV(obj, SymAsyncIterator)); method != nil {
+		return r.getIterator(obj, method)
+	}
+	return r.createAsyncFromSyncIterator(r.getIterator(obj, nil))
+}
+
+// createAsyncFromSyncIterator implements CreateAsyncFromSyncIterator. The iterator object is only accessible
+// by for-await, so it only needs a 'return' method, 'next' is stored in the record.
+func (r *Runtime) createAsyncFromSyncIterator(syncIter *iteratorRecord) *iteratorRecord {
+	// AsyncFromSyncIteratorContinuation. Closing the sync iterator on rejection ignores any errors from return().
+	continuation := func(result *Object, pcap *promiseCapability, closeOnRejection bool) {
+		done := iteratorComplete(result)
+		value := iteratorValue(result)
+		closeOnRejection = closeOnRejection && !done
+		var valueWrapper *Object
+		if ex := r.vm.try(func() {
+			valueWrapper = r.promiseResolve(r.getPromise(), value)
+		}); ex != nil {
+			if closeOnRejection {
+				_ = r.vm.try(syncIter.returnIter)
+			}
+			panic(ex)
+		}
+		onFulfilled := r.newNativeFunc(func(call FunctionCall) Value {
+			return r.createIterResultObject(call.Argument(0), done)
+		}, "", 1)
+		var onRejected Value = _undefined
+		if closeOnRejection {
+			onRejected = r.newNativeFunc(func(call FunctionCall) Value {
+				_ = r.vm.try(syncIter.returnIter)
+				panic(call.Argument(0))
+			}, "", 1)
+		}
+		r.performPromiseThen(valueWrapper.self.(*Promise), onFulfilled, onRejected, pcap)
+	}
+
+	next := func(FunctionCall) Value {
+		pcap := r.newPromiseCapability(r.getPromise())
+		pcap.try(func() {
+			if syncIter.next == nil {
+				panic(r.NewTypeError("iterator.next is not a function"))
+			}
+			continuation(r.toObject(syncIter.next(FunctionCall{This: syncIter.iterator})), pcap, true)
+		})
+		return pcap.promise
+	}
+	ret := func(FunctionCall) Value {
+		pcap := r.newPromiseCapability(r.getPromise())
+		pcap.try(func() {
+			if method := toMethod(syncIter.iterator.self.getStr("return", nil)); method != nil {
+				continuation(r.toObject(method(FunctionCall{This: syncIter.iterator})), pcap, false)
+			} else {
+				pcap.resolve(r.createIterResultObject(_undefined, true))
+			}
+		})
+		return pcap.promise
+	}
+	iter := r.NewObject()
+	iter.self._putProp("return", r.newNativeFunc(ret, "return", 0), true, false, true)
+	return &iteratorRecord{iterator: iter, next: next}
+}
+
 func iteratorComplete(iterResult *Object) bool {
 	return nilSafe(iterResult.self.getStr("done", nil)).ToBoolean()
 }
@@ -2866,11 +2964,10 @@ func (ir *iteratorRecord) iterate(step func(Value)) {
 		if ir.next == nil {
 			panic(r.NewTypeError("iterator.next is missing or not a function"))
 		}
-		res := r.toObject(ir.next(FunctionCall{This: ir.iterator}))
-		if iteratorComplete(res) {
+		value, valid := ir.stepValue()
+		if !valid {
 			break
 		}
-		value := iteratorValue(res)
 		ret := tryFunc(func() {
 			step(value)
 		})
@@ -2886,11 +2983,10 @@ func (ir *iteratorRecord) iterate(step func(Value)) {
 func (ir *iteratorRecord) step() (value Value, ex *Exception) {
 	r := ir.iterator.runtime
 	ex = r.vm.try(func() {
-		res := r.toObject(ir.next(FunctionCall{This: ir.iterator}))
-		done := iteratorComplete(res)
-		if !done {
-			value = iteratorValue(res)
-		} else {
+		var valid bool
+		value, valid = ir.stepValue()
+		if !valid {
+			value = nil
 			ir.close()
 		}
 	})
@@ -2907,11 +3003,13 @@ func (ir *iteratorRecord) returnIter() {
 	}
 	ir.iterator = nil
 	ir.next = nil
+	ir.nextRes = nil
 }
 
 func (ir *iteratorRecord) close() {
 	ir.iterator = nil
 	ir.next = nil
+	ir.nextRes = nil
 }
 
 // ForOf is a Go equivalent of for-of loop. The function panics if an exception is thrown at any point
@@ -2954,13 +3052,6 @@ func (r *Runtime) createIterResultObject(value Value, done bool) Value {
 	o.self.setOwnStr("value", value, false)
 	o.self.setOwnStr("done", r.toBoolean(done), false)
 	return o
-}
-
-func (r *Runtime) setIterResultObject(o Value, value Value, done bool) {
-	if _, isobj := o.(*Object); isobj {
-		o.(*Object).self.setOwnStr("value", value, false)
-		o.(*Object).self.setOwnStr("done", r.toBoolean(done), false)
-	}
 }
 
 func (r *Runtime) getHash() *maphash.Hash {

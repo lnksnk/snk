@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/big"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -114,6 +115,8 @@ type iterStackItem struct {
 	val  Value
 	f    iterNextFunc
 	iter *iteratorRecord
+	// async iterators are closed by the compiled code, never by restoreStacks()
+	aiter *iteratorRecord
 }
 
 type ref interface {
@@ -383,6 +386,8 @@ type vm struct {
 	interruptLock sync.Mutex
 
 	curAsyncRunner *asyncRunner
+
+	profTracker *profTracker
 }
 
 type instruction interface {
@@ -616,8 +621,20 @@ func (vm *vm) halted() bool {
 }
 
 func (vm *vm) run() {
+	if vm.profTracker != nil && !vm.runWithProfiler() {
+		return
+	}
+	count := 0
 	interrupted := false
 	for {
+		if count == 0 {
+			if atomic.LoadInt32(&globalProfiler.enabled) == 1 && !vm.runWithProfiler() {
+				return
+			}
+			count = 100
+		} else {
+			count--
+		}
 		if interrupted = atomic.LoadUint32(&vm.interrupted) != 0; interrupted {
 			break
 		}
@@ -639,7 +656,7 @@ func (vm *vm) run() {
 	}
 }
 
-/*func (vm *vm) runWithProfiler() bool {
+func (vm *vm) runWithProfiler() bool {
 	pt := vm.profTracker
 	if pt == nil {
 		pt = globalProfiler.p.registerVm()
@@ -673,7 +690,7 @@ func (vm *vm) run() {
 	}
 
 	return false
-}*/
+}
 
 func (vm *vm) Interrupt(v interface{}) {
 	vm.interruptLock.Lock()
@@ -5287,6 +5304,76 @@ func (_iterateP) exec(vm *vm) {
 	vm.pc++
 }
 
+type _iterateAsyncP struct{}
+
+var iterateAsyncP _iterateAsyncP
+
+func (_iterateAsyncP) exec(vm *vm) {
+	iter := vm.r.getAsyncIterator(vm.stack[vm.sp-1])
+	vm.iterStack = append(vm.iterStack, iterStackItem{aiter: iter})
+	vm.sp--
+	vm.pc++
+}
+
+type _asyncIterNext struct{}
+
+var asyncIterNext _asyncIterNext
+
+func (_asyncIterNext) exec(vm *vm) {
+	iter := vm.iterStack[len(vm.iterStack)-1].aiter
+	if iter.next == nil {
+		panic(vm.r.NewTypeError("iterator.next is not a function"))
+	}
+	vm.stack.expand(vm.sp + 1)
+	vm.stack[vm.sp] = iter.next(FunctionCall{This: iter.iterator})
+	vm.sp++
+	// await
+	vm.stack[vm.sp] = await
+	vm.sp++
+	vm.pc = -vm.pc
+}
+
+// asyncIterStep processes the awaited result of next(), jumps if the iterator is done.
+type asyncIterStep int32
+
+func (jmp asyncIterStep) exec(vm *vm) {
+	res := vm.r.toObject(vm.pop())
+	if iteratorComplete(res) {
+		vm.pc += int(jmp)
+		return
+	}
+	vm.iterStack[len(vm.iterStack)-1].val = iteratorValue(res)
+	vm.pc++
+}
+
+// asyncIterClose calls return(), pushes the result to be awaited and triggers await, jumps if there is no return method.
+// The iterator stays on iterStack.
+type asyncIterClose int32
+
+func (jmp asyncIterClose) exec(vm *vm) {
+	iter := vm.iterStack[len(vm.iterStack)-1].aiter
+	if ret := toMethod(iter.iterator.self.getStr("return", nil)); ret != nil {
+		vm.stack.expand(vm.sp + 1)
+		vm.stack[vm.sp] = ret(FunctionCall{This: iter.iterator})
+		vm.sp++
+		// await
+		vm.stack[vm.sp] = await
+		vm.sp++
+		vm.pc = -vm.pc
+	} else {
+		vm.pc += int(jmp)
+	}
+}
+
+type _checkObjectP struct{}
+
+var checkObjectP _checkObjectP
+
+func (_checkObjectP) exec(vm *vm) {
+	vm.r.toObject(vm.pop())
+	vm.pc++
+}
+
 type _iterate struct{}
 
 var iterate _iterate
@@ -5467,7 +5554,7 @@ func (n concatStrings) exec(vm *vm) {
 	vm.sp -= int(n) - 1
 	if allAscii {
 		var buf strings.Builder
-		buf.Grow(length)
+		buf.Grow(toStringLen(length))
 		for _, s := range strs {
 			buf.WriteString(string(s.(asciiString)))
 		}
@@ -5889,6 +5976,10 @@ type definePrivateProp struct {
 func (d *definePrivateProp) exec(vm *vm) {
 	f := vm.r.toObject(vm.stack[vm.sb-1]).self.(*classFuncObject)
 	obj := vm.r.toObject(vm.stack[vm.sp-2])
+	if !obj.self.isExtensible() {
+		vm.throw(vm.r.NewTypeError("Cannot add private field to non-extensible object"))
+		return
+	}
 	penv := obj.self.getPrivateEnv(f.privateEnvType, false)
 	penv.fields[d.idx] = vm.stack[vm.sp-1]
 	vm.sp--
@@ -6031,6 +6122,15 @@ func (vm *vm) exceptionFromValue(x interface{}) *Exception {
 	case syntaxError:
 		ex = &Exception{
 			val: vm.r.newError(vm.r.getSyntaxError(), string(x1)),
+		}
+	case runtime.Error:
+		msg := x1.Error()
+		if strings.Contains(msg, "makeslice: ") {
+			ex = &Exception{
+				val: vm.r.newError(vm.r.getRangeError(), "Invalid array or string length"),
+			}
+		} else {
+			return nil
 		}
 	default:
 		/*

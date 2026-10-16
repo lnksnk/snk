@@ -122,7 +122,7 @@ func (r *Runtime) newErrorObject(proto *Object, class string) *errorObject {
 func (r *Runtime) builtin_Error(args []Value, proto *Object) *Object {
 	obj := r.newErrorObject(proto, classError)
 	if len(args) > 0 && args[0] != _undefined {
-		obj._putProp("message", args[0].ToString(), true, false, true)
+		obj._putProp("message", args[0].toString(), true, false, true)
 	}
 	if len(args) > 1 && args[1] != _undefined {
 		if options, ok := args[1].(*Object); ok {
@@ -148,7 +148,9 @@ func (r *Runtime) builtin_AggregateError(args []Value, proto *Object) *Object {
 	if len(args) > 0 {
 		items = args[0]
 	}
-	obj._putProp("errors", r.newArrayValues(r.iterableToList(items, nil)), true, false, true)
+	errors := r.iterableToList(items, nil)
+	obj._putProp("errors", r.newArrayValues(errors), true, false, true)
+
 	if len(args) > 2 && args[2] != _undefined {
 		if options, ok := args[2].(*Object); ok {
 			if options.hasProperty(asciiString("cause")) {
