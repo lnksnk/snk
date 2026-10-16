@@ -43,7 +43,7 @@ func (o *objectGoSliceReflect) grow(size int) {
 	} else {
 		tail := o.fieldsValue.Slice(o.fieldsValue.Len(), size)
 		zero := reflect.Zero(o.fieldsValue.Type().Elem())
-		for i := 0; i < tail.Len(); i++ {
+		for i := range tail.Len() {
 			tail.Index(i).Set(zero)
 		}
 		o.fieldsValue.SetLen(size)
@@ -54,7 +54,7 @@ func (o *objectGoSliceReflect) shrink(size int) {
 	o.valueCache.shrink(size)
 	tail := o.fieldsValue.Slice(size, o.fieldsValue.Len())
 	zero := reflect.Zero(o.fieldsValue.Type().Elem())
-	for i := 0; i < tail.Len(); i++ {
+	for i := range tail.Len() {
 		tail.Index(i).Set(zero)
 	}
 	o.fieldsValue.SetLen(size)

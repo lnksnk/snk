@@ -931,7 +931,7 @@ func (a *typedArrayObject) stringKeys(all bool, accum []Value) []Value {
 	if accum == nil {
 		accum = make([]Value, 0, a.length)
 	}
-	for i := 0; i < a.length; i++ {
+	for i := range a.length {
 		accum = append(accum, asciiString(strconv.Itoa(i)))
 	}
 	return a.baseObject.stringKeys(all, accum)

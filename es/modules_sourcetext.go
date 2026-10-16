@@ -118,14 +118,19 @@ type exportEntry struct {
 func importEntriesFromAst(declarations []*ast.ImportDeclaration) ([]importEntry, error) {
 	var result []importEntry
 	names := make(map[string]struct{}, len(declarations))
-	for _, importDeclarion := range declarations {
+
+	var importDeclarion *ast.ImportDeclaration
+	for imdi := range declarations {
+		importDeclarion = declarations[imdi]
 		importClause := importDeclarion.ImportClause
 		if importDeclarion.FromClause == nil {
 			continue // no entry in this case
 		}
 		moduleRequest := importDeclarion.FromClause.ModuleSpecifier.String()
 		if named := importClause.NamedImports; named != nil {
-			for _, el := range named.ImportsList {
+			var el *ast.ImportSpecifier
+			for eli := range named.ImportsList {
+				el = named.ImportsList[eli]
 				localName := el.Alias.String()
 				if localName == "" {
 					localName = el.IdentifierName.String()
@@ -179,8 +184,8 @@ func exportEntryFromIdentifier(id *ast.Identifier, lex bool) exportEntry {
 
 func exportEntriesFromObjectPattern(op *ast.ObjectPattern, lex bool) []exportEntry {
 	result := make([]exportEntry, 0, len(op.Properties))
-	for _, p := range op.Properties {
-		switch p := p.(type) {
+	for pi := range op.Properties {
+		switch p := op.Properties[pi].(type) {
 		case *ast.PropertyShort:
 			name := p.Name.Name.String()
 			result = append(result, exportEntry{
@@ -202,8 +207,8 @@ func exportEntriesFromObjectPattern(op *ast.ObjectPattern, lex bool) []exportEnt
 
 func exportEntriesFromArrayPattern(op *ast.ArrayPattern, lex bool) []exportEntry {
 	result := make([]exportEntry, 0, len(op.Elements))
-	for _, p := range op.Elements {
-		switch p := p.(type) {
+	for pi := range op.Elements {
+		switch p := op.Elements[pi].(type) {
 		case *ast.ObjectPattern:
 			panic("exported of destructing with object pattern is not supported at this time.")
 		case *ast.ArrayLiteral:
@@ -226,14 +231,16 @@ func exportEntriesFromArrayPattern(op *ast.ArrayPattern, lex bool) []exportEntry
 
 func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 	var result []exportEntry
-	for _, exportDeclaration := range declarations {
+	var exportDeclaration *ast.ExportDeclaration
+	for edi := range declarations {
+		exportDeclaration = declarations[edi]
 		if exportDeclaration.ExportFromClause != nil {
 			exportFromClause := exportDeclaration.ExportFromClause
 			if namedExports := exportFromClause.NamedExports; namedExports != nil {
-				for _, spec := range namedExports.ExportsList {
+				for spi := range namedExports.ExportsList {
 					result = append(result, exportEntry{
-						localName:  spec.IdentifierName.String(),
-						exportName: spec.Alias.String(),
+						localName:  namedExports.ExportsList[spi].IdentifierName.String(),
+						exportName: namedExports.ExportsList[spi].Alias.String(),
 						offset:     int(exportDeclaration.Idx0()),
 					})
 				}
@@ -256,8 +263,8 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 				panic("wat")
 			}
 		} else if variableDeclaration := exportDeclaration.Variable; variableDeclaration != nil {
-			for _, l := range variableDeclaration.List {
-				switch i := l.Target.(type) {
+			for li := range variableDeclaration.List {
+				switch i := variableDeclaration.List[li].Target.(type) {
 				case *ast.Identifier:
 					result = append(result, exportEntryFromIdentifier(i, false))
 				case *ast.ObjectPattern:
@@ -269,8 +276,8 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 				}
 			}
 		} else if LexicalDeclaration := exportDeclaration.LexicalDeclaration; LexicalDeclaration != nil {
-			for _, l := range LexicalDeclaration.List {
-				switch i := l.Target.(type) {
+			for li := range LexicalDeclaration.List {
+				switch i := LexicalDeclaration.List[li].Target.(type) {
 				case *ast.Identifier:
 					result = append(result, exportEntryFromIdentifier(i, true))
 				case *ast.ObjectPattern:
@@ -300,7 +307,9 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 			})
 		} else if fromClause := exportDeclaration.FromClause; fromClause != nil {
 			if namedExports := exportDeclaration.NamedExports; namedExports != nil {
-				for _, spec := range namedExports.ExportsList {
+				var spec *ast.ExportSpecifier
+				for spi := range namedExports.ExportsList {
+					spec = namedExports.ExportsList[spi]
 					alias := spec.IdentifierName.String()
 					if spec.Alias != "" {
 						alias = spec.Alias.String()
@@ -316,7 +325,9 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 				panic("wat")
 			}
 		} else if namedExports := exportDeclaration.NamedExports; namedExports != nil {
-			for _, spec := range namedExports.ExportsList {
+			var spec *ast.ExportSpecifier
+			for spi := range namedExports.ExportsList {
+				spec = namedExports.ExportsList[spi]
 				alias := spec.IdentifierName.String()
 				if spec.Alias != "" {
 					alias = spec.Alias.String()
@@ -364,8 +375,8 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 
 func requestedModulesFromAst(statements []ast.Statement) []string {
 	var result []string
-	for _, st := range statements {
-		switch imp := st.(type) {
+	for sti := range statements {
+		switch imp := statements[sti].(type) {
 		case *ast.ImportDeclaration:
 			if imp.FromClause != nil {
 				result = append(result, imp.FromClause.ModuleSpecifier.String())
@@ -382,9 +393,9 @@ func requestedModulesFromAst(statements []ast.Statement) []string {
 }
 
 func findImportByLocalName(importEntries []importEntry, name string) (importEntry, bool) {
-	for _, i := range importEntries {
-		if i.localName == name {
-			return i, true
+	for i := range importEntries {
+		if importEntries[i].localName == name {
+			return importEntries[i], true
 		}
 	}
 
@@ -420,7 +431,9 @@ func ModuleFromAST(body *ast.Program, resolveModule HostResolveImportedModuleFun
 	var localExportEntries []exportEntry
 	var starExportEntries []exportEntry
 	exportEntries := exportEntriesFromAst(body.ExportEntries)
-	for _, ee := range exportEntries {
+	var ee exportEntry
+	for eei := range exportEntries {
+		ee = exportEntries[eei]
 		if ee.moduleRequest == "" { // technically nil
 			ie, ok := findImportByLocalName(importEntries, ee.localName)
 			if !ok {
@@ -482,18 +495,18 @@ func ModuleFromAST(body *ast.Program, resolveModule HostResolveImportedModuleFun
 
 func (module *SourceTextModuleRecord) getExportedNamesWithotStars() []string {
 	exportedNames := make([]string, 0, len(module.localExportEntries)+len(module.indirectExportEntries))
-	for _, e := range module.localExportEntries {
-		exportedNames = append(exportedNames, e.exportName)
+	for eli := range module.localExportEntries {
+		exportedNames = append(exportedNames, module.localExportEntries[eli].exportName)
 	}
-	for _, e := range module.indirectExportEntries {
-		exportedNames = append(exportedNames, e.exportName)
+	for eii := range module.indirectExportEntries {
+		exportedNames = append(exportedNames, module.indirectExportEntries[eii].exportName)
 	}
 	return exportedNames
 }
 
 func (module *SourceTextModuleRecord) GetExportedNames(callback func([]string), exportStarSet ...ModuleRecord) bool {
-	for _, el := range exportStarSet {
-		if el == module { // better check
+	for ei := range exportStarSet {
+		if exportStarSet[ei] == module { // better check
 			// TODO assert
 			callback(nil)
 			return true
@@ -501,28 +514,28 @@ func (module *SourceTextModuleRecord) GetExportedNames(callback func([]string), 
 	}
 	exportStarSet = append(exportStarSet, module)
 	var exportedNames []string
-	for _, e := range module.localExportEntries {
-		exportedNames = append(exportedNames, e.exportName)
+	for ei := range module.localExportEntries {
+		exportedNames = append(exportedNames, module.localExportEntries[ei].exportName)
 	}
-	for _, e := range module.indirectExportEntries {
-		exportedNames = append(exportedNames, e.exportName)
+	for ei := range module.indirectExportEntries {
+		exportedNames = append(exportedNames, module.indirectExportEntries[ei].exportName)
 	}
 	if len(module.starExportEntries) == 0 {
 		callback(exportedNames)
 		return true
 	}
 
-	for i, e := range module.starExportEntries {
-		requestedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
+	for i := range module.starExportEntries {
+		requestedModule, err := module.hostResolveImportedModule(module, module.starExportEntries[i].moduleRequest)
 		if err != nil {
 			panic(err)
 		}
 		ch := make(chan struct{})
 		newCallback := func(names []string) {
-			for _, n := range names {
-				if n != "default" {
+			for ni := range names {
+				if names[ni] != "default" {
 					// TODO check if n i exportedNames and don't include it
-					exportedNames = append(exportedNames, n)
+					exportedNames = append(exportedNames, names[ni])
 				}
 			}
 			close(ch)
@@ -544,17 +557,17 @@ func (module *SourceTextModuleRecord) GetExportedNames(callback func([]string), 
 func (module *SourceTextModuleRecord) handleAsyncGeteExportNames(
 	exportedNames []string, remaining []exportEntry, callback func([]string), exportStarSet ...ModuleRecord,
 ) {
-	for _, e := range remaining {
-		requestedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
+	for ei := range remaining {
+		requestedModule, err := module.hostResolveImportedModule(module, remaining[ei].moduleRequest)
 		if err != nil {
 			panic(err)
 		}
 		ch := make(chan struct{})
 		newCallback := func(names []string) {
-			for _, n := range names {
-				if n != "default" {
+			for ni := range names {
+				if names[ni] != "default" {
 					// TODO check if n i exportedNames and don't include it
-					exportedNames = append(exportedNames, n)
+					exportedNames = append(exportedNames, names[ni])
 				}
 			}
 			close(ch)
@@ -607,36 +620,36 @@ func (module *SourceTextModuleRecord) ResolveExport(exportName string, resolvese
 	if exportName == "" {
 		panic("wat")
 	}
-	for _, r := range resolveset {
-		if r.Module == module && exportName == r.ExportName { // TODO better
+	for ri := range resolveset {
+		if resolveset[ri].Module == module && exportName == resolveset[ri].ExportName { // TODO better
 			return nil, false
 		}
 	}
 	resolveset = append(resolveset, ResolveSetElement{Module: module, ExportName: exportName})
-	for _, e := range module.localExportEntries {
-		if exportName == e.exportName {
+	for ei := range module.localExportEntries {
+		if exportName == module.localExportEntries[ei].exportName {
 			// ii. ii. Return ResolvedBinding Record { [[Module]]: module, [[BindingName]]: e.[[LocalName]] }.
 			return &ResolvedBinding{
 				Module:      module,
-				BindingName: e.localName,
+				BindingName: module.localExportEntries[ei].localName,
 			}, false
 		}
 	}
 
-	for _, e := range module.indirectExportEntries {
-		if exportName == e.exportName {
-			importedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
+	for ei := range module.indirectExportEntries {
+		if exportName == module.indirectExportEntries[ei].exportName {
+			importedModule, err := module.hostResolveImportedModule(module, module.indirectExportEntries[ei].moduleRequest)
 			if err != nil {
 				panic(err) // TODO return err
 			}
-			if e.importName == "*" {
+			if module.indirectExportEntries[ei].importName == "*" {
 				// 2. 2. Return ResolvedBinding Record { [[Module]]: importedModule, [[BindingName]]: "*namespace*" }.
 				return &ResolvedBinding{
 					Module:      importedModule,
 					BindingName: "*namespace*",
 				}, false
 			} else {
-				return importedModule.ResolveExport(e.importName, resolveset...)
+				return importedModule.ResolveExport(module.indirectExportEntries[ei].importName, resolveset...)
 			}
 		}
 	}
@@ -647,8 +660,8 @@ func (module *SourceTextModuleRecord) ResolveExport(exportName string, resolvese
 	}
 	var starResolution *ResolvedBinding
 
-	for _, e := range module.starExportEntries {
-		importedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
+	for ei := range module.starExportEntries {
+		importedModule, err := module.hostResolveImportedModule(module, module.starExportEntries[ei].moduleRequest)
 		if err != nil {
 			panic(err) // TODO return err
 		}

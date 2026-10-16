@@ -2,6 +2,7 @@ package es
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"math/big"
 	"reflect"
@@ -1190,7 +1191,7 @@ func (e export) exec(vm *vm) {
 	level := int(e.idx >> 24)
 	idx := uint32(e.idx & 0x00FFFFFF)
 	stash := vm.stash
-	for i := 0; i < level; i++ {
+	for range level {
 		stash = stash.outer
 	}
 	e.callback(vm, func() Value {
@@ -1209,7 +1210,7 @@ func (e exportLex) exec(vm *vm) {
 	level := int(e.idx >> 24)
 	idx := uint32(e.idx & 0x00FFFFFF)
 	stash := vm.stash
-	for i := 0; i < level; i++ {
+	for range level {
 		stash = stash.outer
 	}
 	e.callback(vm, func() Value {
@@ -2844,7 +2845,7 @@ func (vm *vm) setLocalLex(s int) {
 	level := s >> 24
 	idx := uint32(s & 0x00FFFFFF)
 	stash := vm.stash
-	for i := 0; i < level; i++ {
+	for range level {
 		stash = stash.outer
 	}
 	p := &stash.values[idx]
@@ -2860,7 +2861,7 @@ func (vm *vm) initLocal(s int) {
 	level := s >> 24
 	idx := uint32(s & 0x00FFFFFF)
 	stash := vm.stash
-	for i := 0; i < level; i++ {
+	for range level {
 		stash = stash.outer
 	}
 	stash.initByIdx(idx, v)
@@ -2908,7 +2909,7 @@ func (s initIndirect) exec(vm *vm) {
 	level := int(s.idx) >> 24
 	idx := uint32(s.idx & 0x00FFFFFF)
 	stash := vm.stash
-	for i := 0; i < level; i++ {
+	for range level {
 		stash = stash.outer
 	}
 	stash.initByIdx(idx, vm.r.ToValue(s.getter))
@@ -3076,7 +3077,7 @@ func (g loadStash) exec(vm *vm) {
 	level := int(g >> 24)
 	idx := uint32(g & 0x00FFFFFF)
 	stash := vm.stash
-	for i := 0; i < level; i++ {
+	for range level {
 		stash = stash.outer
 	}
 
@@ -3091,7 +3092,7 @@ func (g loadStashLex) exec(vm *vm) {
 	level := int(g >> 24)
 	idx := uint32(g & 0x00FFFFFF)
 	stash := vm.stash
-	for i := 0; i < level; i++ {
+	for range level {
 		stash = stash.outer
 	}
 
@@ -3117,7 +3118,7 @@ func (g *loadMixed) exec(vm *vm) {
 	idx := g.idx & 0x00FFFFFF
 	stash := vm.stash
 	name := g.name
-	for i := 0; i < level; i++ {
+	for range level {
 		if v, found := stash.getByName(name); found {
 			if g.callee {
 				if stash.obj != nil {
@@ -3150,7 +3151,7 @@ func (g *loadMixedLex) exec(vm *vm) {
 	idx := g.idx & 0x00FFFFFF
 	stash := vm.stash
 	name := g.name
-	for i := 0; i < level; i++ {
+	for range level {
 		if v, found := stash.getByName(name); found {
 			if g.callee {
 				if stash.obj != nil {
@@ -3195,7 +3196,7 @@ func (g *loadMixedStack) exec(vm *vm) {
 	stash := vm.stash
 	name := g.name
 	level := int(g.level)
-	for i := 0; i < level; i++ {
+	for range level {
 		if v, found := stash.getByName(name); found {
 			if g.callee {
 				if stash.obj != nil {
@@ -3222,7 +3223,7 @@ func (g *loadMixedStack1) exec(vm *vm) {
 	stash := vm.stash
 	name := g.name
 	level := int(g.level)
-	for i := 0; i < level; i++ {
+	for range level {
 		if v, found := stash.getByName(name); found {
 			if g.callee {
 				if stash.obj != nil {
@@ -3254,7 +3255,7 @@ func (g *loadMixedStackLex) exec(vm *vm) {
 	stash := vm.stash
 	name := g.name
 	level := int(g.level)
-	for i := 0; i < level; i++ {
+	for range level {
 		if v, found := stash.getByName(name); found {
 			if g.callee {
 				if stash.obj != nil {
@@ -3281,7 +3282,7 @@ func (g *loadMixedStack1Lex) exec(vm *vm) {
 	stash := vm.stash
 	name := g.name
 	level := int(g.level)
-	for i := 0; i < level; i++ {
+	for range level {
 		if v, found := stash.getByName(name); found {
 			if g.callee {
 				if stash.obj != nil {
@@ -3347,7 +3348,7 @@ func (r *resolveMixed) exec(vm *vm) {
 	idx := r.idx & 0x00FFFFFF
 	stash := vm.stash
 	var ref ref
-	for i := 0; i < level; i++ {
+	for range level {
 		ref = stash.getRefByName(r.name, r.strict)
 		if ref != nil {
 			goto end
@@ -3385,7 +3386,7 @@ func (r *resolveMixedStack) exec(vm *vm) {
 	stash := vm.stash
 	var ref ref
 	var idx int
-	for i := 0; i < level; i++ {
+	for range level {
 		ref = stash.getRefByName(r.name, r.strict)
 		if ref != nil {
 			goto end
@@ -3410,7 +3411,7 @@ func (r *resolveMixedStack1) exec(vm *vm) {
 	level := int(r.level)
 	stash := vm.stash
 	var ref ref
-	for i := 0; i < level; i++ {
+	for range level {
 		ref = stash.getRefByName(r.name, r.strict)
 		if ref != nil {
 			goto end
@@ -3794,9 +3795,7 @@ func (e *enterFunc) exec(vm *vm) {
 	if len(e.names) > 0 {
 		if e.extensible {
 			m := make(map[unistring.String]uint32, len(e.names))
-			for name, idx := range e.names {
-				m[name] = idx
-			}
+			maps.Copy(m, e.names)
 			stash.names = m
 		} else {
 			stash.names = e.names
@@ -3863,9 +3862,7 @@ func (e *enterFunc1) exec(vm *vm) {
 	if len(e.names) > 0 {
 		if e.extensible {
 			m := make(map[unistring.String]uint32, len(e.names))
-			for name, idx := range e.names {
-				m[name] = idx
-			}
+			maps.Copy(m, e.names)
 			stash.names = m
 		} else {
 			stash.names = e.names
@@ -3910,9 +3907,7 @@ func (e *enterFuncBody) exec(vm *vm) {
 		if len(e.names) > 0 {
 			if e.extensible {
 				m := make(map[unistring.String]uint32, len(e.names))
-				for name, idx := range e.names {
-					m[name] = idx
-				}
+				maps.Copy(m, e.names)
 				stash.names = m
 			} else {
 				stash.names = e.names
@@ -4200,28 +4195,28 @@ func (vm *vm) checkBindVarsGlobal(names []unistring.String) {
 	if bo, ok := o.(*baseObject); ok {
 		// shortcut
 		if bo.extensible {
-			for _, name := range names {
-				if _, exists := sn[name]; exists {
-					panic(vm.alreadyDeclared(name))
+			for ni := range names {
+				if _, exists := sn[names[ni]]; exists {
+					panic(vm.alreadyDeclared(names[ni]))
 				}
 			}
 		} else {
-			for _, name := range names {
-				if !bo.hasOwnPropertyStr(name) {
-					panic(vm.r.NewTypeError("Cannot define global variable '%s', global object is not extensible", name))
+			for ni := range names {
+				if !bo.hasOwnPropertyStr(names[ni]) {
+					panic(vm.r.NewTypeError("Cannot define global variable '%s', global object is not extensible", names[ni]))
 				}
-				if _, exists := sn[name]; exists {
-					panic(vm.alreadyDeclared(name))
+				if _, exists := sn[names[ni]]; exists {
+					panic(vm.alreadyDeclared(names[ni]))
 				}
 			}
 		}
 	} else {
-		for _, name := range names {
-			if !o.hasOwnPropertyStr(name) && !o.isExtensible() {
-				panic(vm.r.NewTypeError("Cannot define global variable '%s', global object is not extensible", name))
+		for ni := range names {
+			if !o.hasOwnPropertyStr(names[ni]) && !o.isExtensible() {
+				panic(vm.r.NewTypeError("Cannot define global variable '%s', global object is not extensible", names[ni]))
 			}
-			if _, exists := sn[name]; exists {
-				panic(vm.alreadyDeclared(name))
+			if _, exists := sn[names[ni]]; exists {
+				panic(vm.alreadyDeclared(names[ni]))
 			}
 		}
 	}
@@ -4230,9 +4225,9 @@ func (vm *vm) checkBindVarsGlobal(names []unistring.String) {
 func (vm *vm) createGlobalVarBindings(names []unistring.String, d bool) {
 	o := vm.r.globalObject.self
 	if bo, ok := o.(*templatedObject); ok {
-		for _, name := range names {
-			if !bo.hasOwnPropertyStr(name) && bo.extensible {
-				bo._putProp(name, _undefined, true, true, d)
+		for ni := range names {
+			if !bo.hasOwnPropertyStr(names[ni]) && bo.extensible {
+				bo._putProp(names[ni], _undefined, true, true, d)
 			}
 		}
 	} else {
@@ -4242,15 +4237,15 @@ func (vm *vm) createGlobalVarBindings(names []unistring.String, d bool) {
 		} else {
 			cf = FLAG_FALSE
 		}
-		for _, name := range names {
-			if !o.hasOwnPropertyStr(name) && o.isExtensible() {
-				o.defineOwnPropertyStr(name, PropertyDescriptor{
+		for ni := range names {
+			if !o.hasOwnPropertyStr(names[ni]) && o.isExtensible() {
+				o.defineOwnPropertyStr(names[ni], PropertyDescriptor{
 					Value:        _undefined,
 					Writable:     FLAG_TRUE,
 					Enumerable:   FLAG_TRUE,
 					Configurable: cf,
 				}, true)
-				o.setOwnStr(name, _undefined, false)
+				o.setOwnStr(names[ni], _undefined, false)
 			}
 		}
 	}
@@ -4263,7 +4258,9 @@ func (vm *vm) createGlobalFuncBindings(names []unistring.String, d bool) {
 	if o, ok := o.(*templatedObject); ok {
 		shortcutObj = o
 	}
-	for i, name := range names {
+	var name unistring.String
+	for i := range names {
+		name = names[i]
 		var desc PropertyDescriptor
 		prop := o.getOwnPropStr(name)
 		desc.Value = vm.stack[b+i]
@@ -4295,7 +4292,9 @@ func (vm *vm) createGlobalFuncBindings(names []unistring.String, d bool) {
 func (vm *vm) checkBindFuncsGlobal(names []unistring.String) {
 	o := vm.r.globalObject.self
 	sn := vm.r.global.stash.names
-	for _, name := range names {
+	var name unistring.String
+	for ni := range names {
+		name = names[ni]
 		if _, exists := sn[name]; exists {
 			panic(vm.alreadyDeclared(name))
 		}
@@ -4316,7 +4315,9 @@ func (vm *vm) checkBindFuncsGlobal(names []unistring.String) {
 func (vm *vm) checkBindLexGlobal(names []unistring.String) {
 	o := vm.r.globalObject.self
 	s := &vm.r.global.stash
-	for _, name := range names {
+	var name unistring.String
+	for i := range names {
+		name = names[i]
 		if _, exists := s.names[name]; exists {
 			goto fail
 		}
@@ -4336,7 +4337,10 @@ type bindVars struct {
 
 func (d *bindVars) exec(vm *vm) {
 	var target *stash
-	for _, name := range d.names {
+
+	var name unistring.String
+	for i := range d.names {
+		name = d.names[i]
 		for s := vm.stash; s != nil; s = s.outer {
 			if idx, exists := s.names[name]; exists && idx&maskVar == 0 {
 				vm.throw(vm.alreadyDeclared(name))
@@ -4352,7 +4356,8 @@ func (d *bindVars) exec(vm *vm) {
 		target = vm.stash
 	}
 	deletable := d.deletable
-	for _, name := range d.names {
+	for i := range d.names {
+		name = d.names[i]
 		target.createBinding(name, deletable)
 	}
 	vm.pc++
@@ -4371,11 +4376,11 @@ func (b *bindGlobal) exec(vm *vm) {
 	vm.checkBindVarsGlobal(b.vars)
 
 	s := &vm.r.global.stash
-	for _, name := range b.lets {
-		s.createLexBinding(name, false)
+	for i := range b.lets {
+		s.createLexBinding(b.lets[i], false)
 	}
-	for _, name := range b.consts {
-		s.createLexBinding(name, true)
+	for i := range b.consts {
+		s.createLexBinding(b.consts[i], true)
 	}
 	vm.createGlobalFuncBindings(b.funcs, b.deletable)
 	vm.createGlobalVarBindings(b.vars, b.deletable)
@@ -5117,8 +5122,8 @@ func (formalArgs createArgsMapped) exec(vm *vm) {
 		})
 	}
 
-	for _, v := range vm.stash.extraArgs {
-		args._put(unistring.String(strconv.Itoa(i)), v)
+	for vi := range vm.stash.extraArgs {
+		args._put(unistring.String(strconv.Itoa(i)), vm.stash.extraArgs[vi])
 		i++
 	}
 
@@ -5142,8 +5147,8 @@ func (formalArgs createArgsUnmapped) exec(vm *vm) {
 		i++
 	}
 
-	for _, v := range vm.stash.extraArgs {
-		args._put(unistring.String(strconv.Itoa(i)), v)
+	for vi := range vm.stash.extraArgs {
+		args._put(unistring.String(strconv.Itoa(i)), vm.stash.extraArgs[vi])
 		i++
 	}
 
@@ -5479,8 +5484,8 @@ func (n concatStrings) exec(vm *vm) {
 	strs := vm.stack[vm.sp-int(n) : vm.sp]
 	length := 0
 	allAscii := true
-	for i, s := range strs {
-		switch s := s.(type) {
+	for i := range strs {
+		switch s := strs[i].(type) {
 		case asciiString:
 			length += s.Length()
 		case unicodeString:
@@ -5505,15 +5510,15 @@ func (n concatStrings) exec(vm *vm) {
 	if allAscii {
 		var buf strings.Builder
 		buf.Grow(toStringLen(length))
-		for _, s := range strs {
-			buf.WriteString(string(s.(asciiString)))
+		for si := range strs {
+			buf.WriteString(string(strs[si].(asciiString)))
 		}
 		vm.stack[vm.sp-1] = asciiString(buf.String())
 	} else {
 		var buf unicodeStringBuilder
 		buf.Grow(length)
-		for _, s := range strs {
-			buf.writeString(s.(String))
+		for si := range strs {
+			buf.writeString(strs[si].(String))
 		}
 		vm.stack[vm.sp-1] = buf.String()
 	}
@@ -5614,14 +5619,14 @@ func (vm *vm) fillPrivateNamesMap(typ *privateEnvType, privateFields, privateMet
 			penv = make(privateNames)
 			vm.privEnv.names = penv
 		}
-		for idx, field := range privateFields {
-			penv[field] = &privateId{
+		for idx := range privateFields {
+			penv[privateFields[idx]] = &privateId{
 				typ: typ,
 				idx: uint32(idx),
 			}
 		}
-		for idx, method := range privateMethods {
-			penv[method] = &privateId{
+		for idx := range privateMethods {
+			penv[privateMethods[idx]] = &privateId{
 				typ:      typ,
 				idx:      uint32(idx),
 				isMethod: true,
@@ -5734,7 +5739,7 @@ func (vm *vm) getStashPtr(s uint32) *Value {
 	level := int(s) >> 24
 	idx := s & 0x00FFFFFF
 	stash := vm.stash
-	for i := 0; i < level; i++ {
+	for range level {
 		stash = stash.outer
 	}
 
@@ -5778,7 +5783,7 @@ func (r resolveThisStash) exec(vm *vm) {
 	level := int(r) >> 24
 	idx := r & 0x00FFFFFF
 	stash := vm.stash
-	for i := 0; i < level; i++ {
+	for range level {
 		stash = stash.outer
 	}
 	vm.refStack = append(vm.refStack, &thisRef{v: &stash.values, idx: int(idx)})
@@ -5940,7 +5945,7 @@ type getPrivatePropRes resolvedPrivateName
 
 func (vm *vm) getPrivateType(level uint8, isStatic bool) *privateEnvType {
 	e := vm.privEnv
-	for i := uint8(0); i < level; i++ {
+	for range level {
 		e = e.outer
 	}
 	if isStatic {

@@ -845,8 +845,8 @@ func (o *Object) GetOwnPropertyNames() (keys []string) {
 func (o *Object) Symbols() []*Symbol {
 	symbols := o.self.symbols(false, nil)
 	ret := make([]*Symbol, len(symbols))
-	for i, sym := range symbols {
-		ret[i], _ = sym.(*Symbol)
+	for i := range symbols {
+		ret[i], _ = symbols[i].(*Symbol)
 	}
 	return ret
 }
@@ -1204,7 +1204,7 @@ func typeErrorResult(throw bool, args ...interface{}) {
 }
 
 func init() {
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		intCache[i] = valueInt(i - 256)
 	}
 }

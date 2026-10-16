@@ -2,6 +2,7 @@ package es
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/lnksnk/snk/es/ast"
@@ -296,8 +297,8 @@ func (b *binding) moveToStash() {
 }
 
 func (b *binding) useCount() (count int) {
-	for _, a := range b.accessPoints {
-		count += len(*a)
+	for ai := range b.accessPoints {
+		count += len(*b.accessPoints[ai])
 	}
 	return
 }
@@ -353,8 +354,8 @@ func (c *compiler) leaveScopeBlock(enter *enterBlock) {
 		popStash:  enter.stashSize > 0,
 	}
 	c.emit(leave)
-	for _, pc := range c.block.breaks {
-		c.p.code[pc] = leave
+	for bi := range c.block.breaks {
+		c.p.code[c.block.breaks[bi]] = leave
 	}
 	c.block.breaks = nil
 	c.leaveBlock()
@@ -362,12 +363,12 @@ func (c *compiler) leaveScopeBlock(enter *enterBlock) {
 
 func (c *compiler) leaveBlock() {
 	lbl := len(c.p.code)
-	for _, item := range c.block.breaks {
-		c.p.code[item] = jump(lbl - item)
+	for bi := range c.block.breaks {
+		c.p.code[c.block.breaks[bi]] = jump(lbl - c.block.breaks[bi])
 	}
 	if t := c.block.typ; t == blockLoop || t == blockLoopEnum {
-		for _, item := range c.block.conts {
-			c.p.code[item] = jump(c.block.cont - item)
+		for ci := range c.block.conts {
+			c.p.code[c.block.conts[ci]] = jump(c.block.cont - c.block.conts[ci])
 		}
 	}
 	c.block = c.block.outer
@@ -453,7 +454,10 @@ func (p *Program) _dumpCode(indent string, logger func(format string, args ...in
 		initFields._dumpCode(i, logger)
 		logger("%s ----", i)
 	}
-	for pc, ins := range p.code {
+
+	var ins instruction
+	for pc := range p.code {
+		ins = p.code[pc]
 		logger("%s %d: %T(%v)", indent, pc, ins, ins)
 		var prg *Program
 		switch f := ins.(type) {
@@ -645,7 +649,10 @@ func (s *scope) finaliseVarAlloc(stackOffset int) (stashSize, stackSize int) {
 	if fs := s.nearestThis(); fs != nil && fs.funcType == funcDerivedCtor {
 		derivedCtor = true
 	}
-	for i, b := range s.bindings {
+
+	var b *binding
+	for i := range s.bindings {
+		b = s.bindings[i]
 		var this bool
 		if b.name == thisBindingName {
 			this = true
@@ -786,9 +793,7 @@ func (s *scope) finaliseVarAlloc(stackOffset int) (stashSize, stackSize int) {
 								s.c.assert(false, s.c.p.sourceOffset(pc), "Unsupported instruction for 'this'")
 							}
 						}
-					} /*else {
-						no-op
-					}*/
+					}
 				} else if argsInStash {
 					for _, pc := range *aps {
 						ap := &code[base+pc]
@@ -853,18 +858,18 @@ func (s *scope) finaliseVarAlloc(stackOffset int) (stashSize, stackSize int) {
 			}
 		}
 	}
-	for _, nested := range s.nested {
-		nested.finaliseVarAlloc(stackIdx + stackOffset)
+	for ni := range s.nested {
+		s.nested[ni].finaliseVarAlloc(stackIdx + stackOffset)
 	}
 	return stashIdx, stackIdx
 }
 
 func (s *scope) moveArgsToStash() {
-	for _, b := range s.bindings {
-		if !b.isArg {
+	for bi := range s.bindings {
+		if !s.bindings[bi].isArg {
 			break
 		}
-		b.inStash = true
+		s.bindings[bi].inStash = true
 	}
 	s.argsInStash = true
 	s.needStash = true
@@ -893,8 +898,8 @@ func (s *scope) trimCode(delta int) {
 
 func (s *scope) adjustBase(delta int) {
 	s.base += delta
-	for _, nested := range s.nested {
-		nested.adjustBase(delta)
+	for ni := range s.nested {
+		s.nested[ni].adjustBase(delta)
 	}
 }
 
@@ -904,7 +909,10 @@ func (s *scope) makeNamesMap() map[unistring.String]uint32 {
 		return nil
 	}
 	names := make(map[unistring.String]uint32, l)
-	for i, b := range s.bindings {
+
+	var b *binding
+	for i := range s.bindings {
+		b = s.bindings[i]
 		idx := uint32(i)
 		if b.isConst {
 			idx |= maskConst
@@ -933,8 +941,9 @@ func (s *scope) isFunction() bool {
 
 func (s *scope) deleteBinding(b *binding) {
 	idx := 0
-	for i, bb := range s.bindings {
-		if bb == b {
+
+	for i := range s.bindings {
+		if s.bindings[i] == b {
 			idx = i
 			goto found
 		}
@@ -981,22 +990,25 @@ func (c *compiler) compileModule(module *SourceTextModuleRecord) {
 		extensible:  true,
 		adjustStack: true,
 	})
-	for _, in := range module.indirectExportEntries {
-		v, ambiguous := module.ResolveExport(in.exportName)
+
+	var ine exportEntry
+	for ini := range module.indirectExportEntries {
+		ine = module.indirectExportEntries[ini]
+		v, ambiguous := module.ResolveExport(ine.exportName)
 		if v == nil || ambiguous {
-			c.compileImportError(ambiguous, in.moduleRequest, in.exportName, in.offset)
+			c.compileImportError(ambiguous, ine.moduleRequest, ine.exportName, ine.offset)
 		}
 	}
 
-	for _, in := range module.importEntries {
-		c.compileImportEntry(in)
+	for in := range module.importEntries {
+		c.compileImportEntry(module.importEntries[in])
 	}
 	funcs := c.extractFunctions(in.Body)
 	c.createFunctionBindings(funcs)
 	c.compileDeclList(in.DeclarationList, false)
 	vars := make([]unistring.String, len(scope.bindings))
-	for i, b := range scope.bindings {
-		vars[i] = b.name
+	for i := range scope.bindings {
+		vars[i] = scope.bindings[i].name
 	}
 	if len(vars) > 0 {
 		c.emit(&bindVars{names: vars, deletable: false})
@@ -1010,16 +1022,16 @@ func (c *compiler) compileModule(module *SourceTextModuleRecord) {
 		enter = &enterBlock{}
 		c.emit(enter)
 	}
-	for _, exp := range in.Body {
-		if imp, ok := exp.(*ast.ImportDeclaration); ok {
+	for exi := range in.Body {
+		if imp, ok := in.Body[exi].(*ast.ImportDeclaration); ok {
 			c.compileImportDeclaration(imp)
 		}
 	}
-	for _, entry := range module.localExportEntries {
-		c.compileLocalExportEntry(entry)
+	for i := range module.localExportEntries {
+		c.compileLocalExportEntry(module.localExportEntries[i])
 	}
-	for _, entry := range module.indirectExportEntries {
-		c.compileIndirectExportEntry(entry)
+	for i := range module.indirectExportEntries {
+		c.compileIndirectExportEntry(module.indirectExportEntries[i])
 	}
 
 	c.compileFunctions(funcs)
@@ -1165,8 +1177,8 @@ func (c *compiler) compile(in *ast.Program, strict, inGlobal bool, evalVm *vm) {
 	c.compileDeclList(in.DeclarationList, false)
 	numVars := len(scope.bindings) - numFuncs
 	vars := make([]unistring.String, len(scope.bindings))
-	for i, b := range scope.bindings {
-		vars[i] = b.name
+	for i := range scope.bindings {
+		vars[i] = scope.bindings[i].name
 	}
 	if len(vars) > 0 && !ownVarScope && ownLexScope {
 		if inGlobal {
@@ -1240,8 +1252,8 @@ func (c *compiler) compileSyntaxError(msg string, offset int) {
 }
 
 func (c *compiler) compileDeclList(v []*ast.VariableDeclaration, inFunc bool) {
-	for _, value := range v {
-		c.createVarBindings(value, inFunc)
+	for vi := range v {
+		c.createVarBindings(v[vi], inFunc)
 	}
 }
 
@@ -1253,7 +1265,9 @@ func (c *compiler) extractLabelled(st ast.Statement) ast.Statement {
 }
 
 func (c *compiler) extractFunctions(list []ast.Statement) (funcs []*ast.FunctionDeclaration) {
-	for _, st := range list {
+	var st ast.Statement
+	for sti := range list {
+		st = list[sti]
 		var decl *ast.FunctionDeclaration
 		switch st := c.extractLabelled(st).(type) {
 		case *ast.FunctionDeclaration:
@@ -1281,11 +1295,15 @@ func (c *compiler) extractFunctions(list []ast.Statement) (funcs []*ast.Function
 
 func (c *compiler) createFunctionBindings(funcs []*ast.FunctionDeclaration) {
 	s := c.scope
+	var decl *ast.FunctionDeclaration
 	if s.outer != nil {
 		unique := !s.isFunction() && !s.variable && s.strict
+
 		if !unique {
 			hasNonStandard := false
-			for _, decl := range funcs {
+
+			for decli := range funcs {
+				decl = funcs[decli]
 				if !decl.Function.Async && !decl.Function.Generator {
 					s.bindNameLexical(decl.Function.Name.Name, false, int(decl.Function.Name.Idx1())-1)
 				} else {
@@ -1293,46 +1311,51 @@ func (c *compiler) createFunctionBindings(funcs []*ast.FunctionDeclaration) {
 				}
 			}
 			if hasNonStandard {
-				for _, decl := range funcs {
+				for decli := range funcs {
+					decl = funcs[decli]
 					if decl.Function.Async || decl.Function.Generator {
 						s.bindNameLexical(decl.Function.Name.Name, true, int(decl.Function.Name.Idx1())-1)
 					}
 				}
 			}
 		} else {
-			for _, decl := range funcs {
+			for decli := range funcs {
+				decl = funcs[decli]
 				s.bindNameLexical(decl.Function.Name.Name, true, int(decl.Function.Name.Idx1())-1)
 			}
 		}
 	} else {
-		for _, decl := range funcs {
+		for decli := range funcs {
+			decl = funcs[decli]
 			s.bindName(decl.Function.Name.Name)
 		}
 	}
 }
 
 func (c *compiler) compileFunctions(list []*ast.FunctionDeclaration) {
-	for _, decl := range list {
-		c.compileFunction(decl)
+	for decli := range list {
+		c.compileFunction(list[decli])
 	}
 }
 
 func (c *compiler) compileFunctionsGlobalAllUnique(list []*ast.FunctionDeclaration) {
-	for _, decl := range list {
-		c.compileFunctionLiteral(decl.Function, false).emitGetter(true)
+	for decli := range list {
+		c.compileFunctionLiteral(list[decli].Function, false).emitGetter(true)
 	}
 }
 
 func (c *compiler) compileFunctionsGlobal(list []*ast.FunctionDeclaration) {
 	m := make(map[unistring.String]int, len(list))
-	for i := len(list) - 1; i >= 0; i-- {
-		name := list[i].Function.Name.Name
+	for i, l := range slices.Backward(list) {
+		name := l.Function.Name.Name
 		if _, exists := m[name]; !exists {
 			m[name] = i
 		}
 	}
 	idx := 0
-	for i, decl := range list {
+	var decl *ast.FunctionDeclaration
+	for i := range list {
+		decl = list[i]
 		name := decl.Function.Name.Name
 		if m[name] == i {
 			c.compileFunctionLiteral(decl.Function, false).emitGetter(true)
@@ -1361,8 +1384,8 @@ func (c *compiler) createBindings(target ast.Expression, createIdBinding func(na
 	case *ast.Identifier:
 		createIdBinding(target.Name, int(target.Idx)-1)
 	case *ast.ObjectPattern:
-		for _, prop := range target.Properties {
-			switch prop := prop.(type) {
+		for pi := range target.Properties {
+			switch prop := target.Properties[pi].(type) {
 			case *ast.PropertyShort:
 				createIdBinding(prop.Name.Name, int(prop.Name.Idx)-1)
 			case *ast.PropertyKeyed:
@@ -1375,8 +1398,8 @@ func (c *compiler) createBindings(target ast.Expression, createIdBinding func(na
 			c.createBindings(target.Rest, createIdBinding)
 		}
 	case *ast.ArrayPattern:
-		for _, elt := range target.Elements {
-			if elt != nil {
+		for ei := range target.Elements {
+			if elt := target.Elements[ei]; elt != nil {
 				c.createBindings(elt, createIdBinding)
 			}
 		}
@@ -1397,8 +1420,8 @@ func (c *compiler) createVarBinding(target ast.Expression, inFunc bool) {
 }
 
 func (c *compiler) createVarBindings(v *ast.VariableDeclaration, inFunc bool) {
-	for _, item := range v.List {
-		c.createVarBinding(item.Target, inFunc)
+	for i := range v.List {
+		c.createVarBinding(v.List[i].Target, inFunc)
 	}
 }
 
@@ -1446,8 +1469,8 @@ func (c *compiler) createLexicalBinding(target ast.Expression, isConst bool) {
 }
 
 func (c *compiler) createLexicalBindings(lex *ast.LexicalDeclaration) {
-	for _, d := range lex.List {
-		c.createLexicalBinding(d.Target, lex.Token == token.CONST)
+	for i := range lex.List {
+		c.createLexicalBinding(lex.List[i].Target, lex.Token == token.CONST)
 	}
 }
 
@@ -1458,8 +1481,8 @@ func (c *compiler) compileLexicalDeclarations(list []ast.Statement, scopeDeclare
 			scopeDeclared = true
 		}
 	}
-	for _, st := range list {
-		switch lex := st.(type) {
+	for i := range list {
+		switch lex := list[i].(type) {
 		case *ast.LexicalDeclaration:
 			declareScope()
 			c.createLexicalBindings(lex)
@@ -1496,15 +1519,15 @@ func (c *compiler) compileLexicalDeclarations(list []ast.Statement, scopeDeclare
 }
 
 func (c *compiler) compileLexicalDeclarationsFuncBody(list []ast.Statement, calleeBinding *binding) {
-	for _, st := range list {
-		if lex, ok := st.(*ast.LexicalDeclaration); ok {
+	for i := range list {
+		if lex, ok := list[i].(*ast.LexicalDeclaration); ok {
 			isConst := lex.Token == token.CONST
-			for _, d := range lex.List {
-				c.createBindings(d.Target, func(name unistring.String, offset int) {
+			for di := range lex.List {
+				c.createBindings(lex.List[di].Target, func(name unistring.String, offset int) {
 					c.createLexicalIdBindingFuncBody(name, isConst, offset, calleeBinding)
 				})
 			}
-		} else if cls, ok := st.(*ast.ClassDeclaration); ok {
+		} else if cls, ok := list[i].(*ast.ClassDeclaration); ok {
 			c.createLexicalIdBindingFuncBody(cls.Class.Name.Name, false, int(cls.Class.Name.Idx)-1, calleeBinding)
 		}
 	}
@@ -1563,8 +1586,8 @@ func (c *compiler) throwSyntaxErrorf(offset int, format string, args ...interfac
 }
 
 func (c *compiler) isStrict(list []ast.Statement) *ast.StringLiteral {
-	for _, st := range list {
-		if st, ok := st.(*ast.ExpressionStatement); ok {
+	for i := range list {
+		if st, ok := list[i].(*ast.ExpressionStatement); ok {
 			if e, ok := st.Expression.(*ast.StringLiteral); ok {
 				if e.Literal == `"use strict"` || e.Literal == `'use strict'` {
 					return e

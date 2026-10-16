@@ -11,7 +11,7 @@ import (
 
 type objectGoSlice struct {
 	baseObject
-	data       *[]interface{}
+	data       *[]any
 	lengthProp valueProperty
 	origIsPtr  bool
 }

@@ -265,12 +265,12 @@ func (d *destructKeyedSource) stringKeys(all bool, accum []Value) []Value {
 
 func (d *destructKeyedSource) filterUsedKeys(keys []Value) []Value {
 	k := 0
-	for i, key := range keys {
-		if d.usedKeys.has(key) {
+	for i := range keys {
+		if d.usedKeys.has(keys[i]) {
 			continue
 		}
 		if k != i {
-			keys[k] = key
+			keys[k] = keys[i]
 		}
 		k++
 	}

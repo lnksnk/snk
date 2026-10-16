@@ -767,8 +767,8 @@ func (p *proxyObject) keys(all bool, _ []Value) []Value {
 	if v, ok := p.proxyOwnKeys(); ok {
 		if !all {
 			k := 0
-			for i, key := range v {
-				prop := p.val.getOwnProp(key)
+			for i := range v {
+				prop := p.val.getOwnProp(v[i])
 				if prop == nil || prop == _undefined {
 					continue
 				}
@@ -794,7 +794,7 @@ func (p *proxyObject) proxyOwnKeys() ([]Value, bool) {
 		var keyList []Value
 		var keySet propNameSet
 		l := toLength(keys.self.getStr("length", nil))
-		for k := int64(0); k < l; k++ {
+		for k := range l {
 			item := keys.self.getIdx(valueInt(k), nil)
 			if _, ok := item.(String); !ok {
 				if _, ok := item.(*Symbol); !ok {
@@ -923,7 +923,8 @@ func (p *proxyObject) __sameValue(val1, val2 Value) bool {
 func (p *proxyObject) filterKeys(vals []Value, all, symbols bool) []Value {
 	if !all {
 		k := 0
-		for i, val := range vals {
+		for i := range vals {
+			val := vals[i]
 			var prop Value
 			if symbols {
 				if s, ok := val.(*Symbol); ok {
@@ -952,8 +953,8 @@ func (p *proxyObject) filterKeys(vals []Value, all, symbols bool) []Value {
 		vals = vals[:k]
 	} else {
 		k := 0
-		for i, val := range vals {
-			if _, ok := val.(*Symbol); ok != symbols {
+		for i := range vals {
+			if _, ok := vals[i].(*Symbol); ok != symbols {
 				continue
 			}
 			if k != i {

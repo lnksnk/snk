@@ -2,6 +2,7 @@ package es
 
 import (
 	"errors"
+	"slices"
 	"sort"
 )
 
@@ -182,9 +183,9 @@ func (r *Runtime) CyclicModuleRecordEvaluate(c CyclicModuleRecord, resolve HostR
 	state := r.evaluationState
 	_, err := r.innerModuleEvaluation(state, c, &stackInstance, 0, resolve)
 	if err != nil {
-		for _, m := range stackInstance {
-			state.status[m] = Evaluated
-			state.evaluationError[m] = err
+		for mi := range stackInstance {
+			state.status[stackInstance[mi]] = Evaluated
+			state.evaluationError[stackInstance[mi]] = err
 		}
 
 		capability.reject(r.ToValue(err))
@@ -284,7 +285,7 @@ func (r *Runtime) innerModuleEvaluation(
 	}
 
 	if state.dfsAncestorIndex[c] == state.dfsIndex[c] {
-		for i := len(*stack) - 1; i >= 0; i-- {
+		for i := range slices.Backward(*stack) {
 			requiredModuleInstance := (*stack)[i]
 			*stack = (*stack)[:i]
 			if state.asyncEvaluation[requiredModuleInstance] == 0 {
@@ -335,7 +336,9 @@ func (r *Runtime) asyncModuleExecutionFulfilled(state *evaluationState, c Cyclic
 	sort.Slice(execList, func(i, j int) bool {
 		return state.asyncEvaluation[execList[i]] < state.asyncEvaluation[execList[j]]
 	})
-	for _, m := range execList {
+	var m CyclicModuleInstance
+	for mi := range execList {
+		m = execList[mi]
 		if state.status[m] == Evaluated {
 			continue
 		}
@@ -408,8 +411,8 @@ func (r *Runtime) GetActiveScriptOrModule() interface{} { // have some better ty
 	if r.vm.prg != nil && r.vm.prg.scriptOrModule != nil {
 		return r.vm.prg.scriptOrModule
 	}
-	for i := len(r.vm.callStack) - 1; i >= 0; i-- {
-		prg := r.vm.callStack[i].prg
+	for _, v := range slices.Backward(r.vm.callStack) {
+		prg := v.prg
 		if prg != nil && prg.scriptOrModule != nil {
 			return prg.scriptOrModule
 		}
@@ -432,8 +435,8 @@ func (r *Runtime) getImportMetaFor(m ModuleRecord) *Object {
 		properties = r.getImportMetaProperties(m)
 	}
 
-	for _, property := range properties {
-		o.Set(property.Key, property.Value)
+	for pi := range properties {
+		o.Set(properties[pi].Key, properties[pi].Value)
 	}
 
 	if r.finalizeImportMeta != nil {

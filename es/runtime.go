@@ -380,9 +380,9 @@ func (e *InterruptedError) Error() string {
 }
 
 func (e *Exception) writeFullStack(b *bytes.Buffer) {
-	for _, frame := range e.stack {
+	for fi := range e.stack {
 		b.WriteString("\tat ")
-		frame.Write(b)
+		e.stack[fi].Write(b)
 		b.WriteByte('\n')
 	}
 }
@@ -544,10 +544,10 @@ func (r *Runtime) CreateObject(proto *Object) *Object {
 	return r.newBaseObject(proto, classObject).val
 }
 
-func (r *Runtime) NewArray(items ...interface{}) *Object {
+func (r *Runtime) NewArray(items ...any) *Object {
 	values := make([]Value, len(items))
-	for i, item := range items {
-		values[i] = r.ToValue(item)
+	for i := range items {
+		values[i] = r.ToValue(items[i])
 	}
 	return r.newArrayValues(values)
 }
@@ -2086,7 +2086,7 @@ func (r *Runtime) wrapReflectFunc(value reflect.Value) func(FunctionCall) Value 
 			in = make([]reflect.Value, l)
 		}
 
-		for i, a := range call.Arguments {
+		for i := range call.Arguments {
 			var t reflect.Type
 
 			n := i
@@ -2103,7 +2103,7 @@ func (r *Runtime) wrapReflectFunc(value reflect.Value) func(FunctionCall) Value 
 			}
 
 			v := reflect.New(t).Elem()
-			err := r.toReflectValue(a, v, &objectExportCtx{})
+			err := r.toReflectValue(call.Arguments[i], v, &objectExportCtx{})
 			if err != nil {
 				panic(r.NewTypeError("could not convert function call parameter %d: %v", i, err))
 			}
@@ -2135,9 +2135,9 @@ func (r *Runtime) wrapReflectFunc(value reflect.Value) func(FunctionCall) Value 
 		case 1:
 			return r.ToValue(out[0].Interface())
 		default:
-			s := make([]interface{}, len(out))
-			for i, v := range out {
-				s[i] = v.Interface()
+			s := make([]any, len(out))
+			for i := range out {
+				s[i] = out[i].Interface()
 			}
 
 			return r.ToValue(s)
@@ -2337,16 +2337,16 @@ func (r *Runtime) wrapJSFunc(fn Callable, typ reflect.Type) func(args []reflect.
 				varArg := args[len(args)-1]
 				args = args[:len(args)-1]
 				jsArgs = make([]Value, 0, len(args)+varArg.Len())
-				for _, arg := range args {
-					jsArgs = append(jsArgs, r.ToValue(arg.Interface()))
+				for i := range args {
+					jsArgs = append(jsArgs, r.ToValue(args[i].Interface()))
 				}
-				for i := 0; i < varArg.Len(); i++ {
+				for i := range varArg.Len() {
 					jsArgs = append(jsArgs, r.ToValue(varArg.Index(i).Interface()))
 				}
 			} else {
 				jsArgs = make([]Value, len(args))
-				for i, arg := range args {
-					jsArgs[i] = r.ToValue(arg.Interface())
+				for i := range args {
+					jsArgs[i] = r.ToValue(args[i].Interface())
 				}
 			}
 		}
@@ -2381,8 +2381,8 @@ func (r *Runtime) wrapJSFunc(fn Callable, typ reflect.Type) func(args []reflect.
 			}
 		}
 
-		for i, v := range results {
-			if !v.IsValid() {
+		for i := range results {
+			if !results[i].IsValid() {
 				results[i] = reflect.Zero(typ.Out(i))
 			}
 		}
@@ -3066,8 +3066,8 @@ func (r *Runtime) leave() {
 	var jobs []func()
 	for len(r.jobQueue) > 0 {
 		jobs, r.jobQueue = r.jobQueue, jobs[:0]
-		for _, job := range jobs {
-			job()
+		for jbi := range jobs {
+			jobs[jbi]()
 		}
 	}
 	r.jobQueue = nil
@@ -3237,7 +3237,7 @@ func strToArrayIdx(s unistring.String) uint32 {
 	if c9 < '0' || c9 > '9' {
 		return math.MaxUint32
 	}
-	for i := 0; i < 9; i++ {
+	for i := range 9 {
 		c := s[i]
 		if c < '0' || c > '9' {
 			return math.MaxUint32
@@ -3291,7 +3291,7 @@ func strToInt32(s unistring.String) (int32, bool) {
 				// guaranteed to overflow
 				return -1, false
 			}
-			for i := 0; i < 9; i++ {
+			for i := range 9 {
 				c := s[i]
 				if c < '0' || c > '9' {
 					return -1, false
@@ -3348,7 +3348,7 @@ func strToInt64(s unistring.String) (int64, bool) {
 				// guaranteed to overflow
 				return -1, false
 			}
-			for i := 0; i < 18; i++ {
+			for i := range 18 {
 				c := s[i]
 				if c < '0' || c > '9' {
 					return -1, false

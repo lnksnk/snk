@@ -281,7 +281,7 @@ func (s *stringObject) iterateStringKeys() iterNextFunc {
 }
 
 func (s *stringObject) stringKeys(all bool, accum []Value) []Value {
-	for i := 0; i < s.length; i++ {
+	for i := range s.length {
 		accum = append(accum, asciiString(strconv.Itoa(i)))
 	}
 

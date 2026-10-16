@@ -36,7 +36,7 @@ func match(s string, lower string) (string, bool) {
 	if len(s) < len(lower) {
 		return s, false
 	}
-	for i := 0; i < len(lower); i++ {
+	for i := range len(lower) {
 		c1 := s[i]
 		c2 := lower[i]
 		if c1 != c2 {
@@ -173,8 +173,8 @@ var monthNamesLower = []string{
 }
 
 func getMonth(s string) (int, string, bool) {
-	for i, monthNameLower := range monthNamesLower {
-		if s, ok := match(s, monthNameLower); ok {
+	for i := range monthNamesLower {
+		if s, ok := match(s, monthNamesLower[i]); ok {
 			return i + 1, s, true
 		}
 	}

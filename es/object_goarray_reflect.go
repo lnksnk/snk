@@ -46,8 +46,8 @@ func (c *valueArrayCache) put(idx int, w reflectValueWrapper) {
 func (c *valueArrayCache) shrink(newlen int) {
 	if len(*c) > newlen {
 		tail := (*c)[newlen:]
-		for i, item := range tail {
-			if item != nil {
+		for i := range tail {
+			if item := tail[i]; item != nil {
 				copyReflectValueWrapper(item)
 				tail[i] = nil
 			}

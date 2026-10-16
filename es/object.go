@@ -406,8 +406,8 @@ func (o *baseObject) checkDelete(name unistring.String, val Value, throw bool) b
 
 func (o *baseObject) _delete(name unistring.String) {
 	delete(o.values, name)
-	for i, n := range o.propNames {
-		if n == name {
+	for i := range o.propNames {
+		if o.propNames[i] == name {
 			names := o.propNames
 			if namesMarkedForCopy(names) {
 				newNames := make([]unistring.String, len(names)-1, shrinkCap(len(names), cap(names)))
@@ -985,11 +985,11 @@ func (o *baseObject) export(ctx *objectExportCtx) interface{} {
 		return v
 	}
 	keys := o.stringKeys(false, nil)
-	m := make(map[string]interface{}, len(keys))
+	m := make(map[string]any, len(keys))
 	ctx.put(o.val, m)
-	for _, itemName := range keys {
-		itemNameStr := itemName.String()
-		v := o.val.self.getStr(itemName.string(), nil)
+	for ik := range keys {
+		itemNameStr := keys[ik].String()
+		v := o.val.self.getStr(keys[ik].string(), nil)
 		if v != nil {
 			m[itemNameStr] = exportValue(v, ctx)
 		} else {
@@ -1069,8 +1069,8 @@ func exportToArrayOrSliceWithIterator(ir *iteratorRecord, o *Object, dst reflect
 			dst.Set(reflect.MakeSlice(typ, len(values), len(values)))
 		}
 		ctx.putTyped(o, typ, dst.Interface())
-		for i, val := range values {
-			err = r.toReflectValue(val, dst.Index(i), ctx)
+		for i := range values {
+			err = r.toReflectValue(values[i], dst.Index(i), ctx)
 			if err != nil {
 				return
 			}
@@ -1093,7 +1093,7 @@ func exportToArrayOrSliceWithIterator(ir *iteratorRecord, o *Object, dst reflect
 			dst.Set(reflect.MakeSlice(typ, l, l))
 		}
 		ctx.putTyped(o, typ, dst.Interface())
-		for i := 0; i < l; i++ {
+		for i := range l {
 			val := nilSafe(o.self.getIdx(valueInt(i), nil))
 			err = r.toReflectValue(val, dst.Index(i), ctx)
 			if err != nil {
@@ -1385,16 +1385,16 @@ func (o *baseObject) fixPropOrder() {
 func (o *baseObject) stringKeys(all bool, keys []Value) []Value {
 	o.ensurePropOrder()
 	if all {
-		for _, k := range o.propNames {
-			keys = append(keys, stringValueFromRaw(k))
+		for ki := range o.propNames {
+			keys = append(keys, stringValueFromRaw(o.propNames[ki]))
 		}
 	} else {
-		for _, k := range o.propNames {
-			prop := o.values[k]
+		for ki := range o.propNames {
+			prop := o.values[o.propNames[ki]]
 			if prop, ok := prop.(*valueProperty); ok && !prop.enumerable {
 				continue
 			}
-			keys = append(keys, stringValueFromRaw(k))
+			keys = append(keys, stringValueFromRaw(o.propNames[ki]))
 		}
 	}
 	return keys
@@ -1662,8 +1662,8 @@ func (o *guardedObject) guard(props ...unistring.String) {
 	if o.guardedProps == nil {
 		o.guardedProps = make(map[unistring.String]struct{})
 	}
-	for _, p := range props {
-		o.guardedProps[p] = struct{}{}
+	for pi := range props {
+		o.guardedProps[props[pi]] = struct{}{}
 	}
 }
 

@@ -486,13 +486,13 @@ func (o *objectGoReflect) iterateStringKeys() iterNextFunc {
 func (o *objectGoReflect) stringKeys(_ bool, accum []Value) []Value {
 	// all own keys are enumerable
 	if o.fieldsInfo != nil {
-		for _, name := range o.fieldsInfo.Names {
-			accum = append(accum, newStringValue(name))
+		for ni := range o.fieldsInfo.Names {
+			accum = append(accum, newStringValue(o.fieldsInfo.Names[ni]))
 		}
 	}
 
-	for _, name := range o.methodsInfo.Names {
-		accum = append(accum, newStringValue(name))
+	for ni := range o.methodsInfo.Names {
+		accum = append(accum, newStringValue(o.methodsInfo.Names[ni]))
 	}
 
 	return accum
@@ -592,7 +592,7 @@ func (r *Runtime) buildMethodsInfo(t reflect.Type) (info *reflectMethodsInfo) {
 	info = new(reflectMethodsInfo)
 	info.Methods = make(map[string]int, n)
 	info.Names = make([]string, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		method := t.Method(i)
 		name := method.Name
 		if !ast.IsExported(name) {

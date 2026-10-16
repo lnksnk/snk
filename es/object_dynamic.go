@@ -530,8 +530,8 @@ func (o *dynamicObject) stringKeys(all bool, accum []Value) []Value {
 		accum = make([]Value, len(accum), l)
 		copy(accum, oldAccum)
 	}
-	for _, key := range keys {
-		accum = append(accum, newStringValue(key))
+	for ki := range keys {
+		accum = append(accum, newStringValue(keys[ki]))
 	}
 	return accum
 }
@@ -780,7 +780,7 @@ func (a *dynamicArray) stringKeys(all bool, accum []Value) []Value {
 		accum = make([]Value, len(oldAccum), l)
 		copy(accum, oldAccum)
 	}
-	for i := 0; i < al; i++ {
+	for i := range al {
 		accum = append(accum, asciiString(strconv.Itoa(i)))
 	}
 	if all {

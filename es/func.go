@@ -415,8 +415,8 @@ func (f *baseJsFuncObject) __call(args []Value, newTarget, this Value) (Value, *
 	vm.sp++
 	vm.stack[vm.sp] = this
 	vm.sp++
-	for _, arg := range args {
-		if arg != nil {
+	for i := range args {
+		if arg := args[i]; arg != nil {
 			vm.stack[vm.sp] = arg
 		} else {
 			vm.stack[vm.sp] = _undefined
@@ -613,8 +613,8 @@ func (f *baseJsFuncObject) prepareForVmCall(call FunctionCall) {
 	vm.sp++
 	vm.stack[vm.sp] = f.val
 	vm.sp++
-	for _, arg := range args {
-		if arg != nil {
+	for i := range args {
+		if arg := args[i]; arg != nil {
 			vm.stack[vm.sp] = arg
 		} else {
 			vm.stack[vm.sp] = _undefined
