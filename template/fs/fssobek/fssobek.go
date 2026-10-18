@@ -3,7 +3,6 @@ package fssobek
 import (
 	"time"
 
-	"github.com/lnksnk/snk/es"
 	snkfs "github.com/lnksnk/snk/fs"
 	snkio "github.com/lnksnk/snk/io"
 	fst "github.com/lnksnk/snk/template/fs"
@@ -31,7 +30,7 @@ func SobekHandler() fst.FSTHandler[*sobek.Runtime, *sobek.Program, sobek.CyclicM
 		}
 		return r
 	}, func(f *fst.FSTHANDLER[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object]) {
-		f.FSTCompileProgram = fst.FSTCompileProgramFunc[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *es.Object](func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, dependensies map[string]time.Time) (prgm *sobek.Program, modrec sobek.CyclicModuleRecord, err error) {
+		f.FSTCompileProgram = fst.FSTCompileProgramFunc[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object](func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, dependensies map[string]time.Time) (prgm *sobek.Program, modrec sobek.CyclicModuleRecord, err error) {
 			var prg *ast.Program
 
 			if prg, err = sobek.Parse("", cde.String(), parser.IsModule); err != nil {
