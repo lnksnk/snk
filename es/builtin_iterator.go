@@ -2,7 +2,6 @@ package es
 
 import (
 	"math"
-	"slices"
 
 	"github.com/lnksnk/snk/es/unistring"
 )
@@ -169,12 +168,12 @@ func (ir *iteratorRecord) stepDone() bool {
 // If ex is not nil, any errors thrown while closing are ignored and ex is re-thrown, otherwise the first error
 // (if any) is thrown after all the iterators have been closed.
 func closeIterators(iters []*iteratorRecord, ex interface{}) {
-	for _, iter := range slices.Backward(iters) {
-		if iter := iter; iter != nil {
+	for i := len(iters) - 1; i >= 0; i-- {
+		if iters[i] != nil {
 			if ex != nil {
-				_ = tryFunc(iter.returnIter)
+				_ = tryFunc(iters[i].returnIter)
 			} else {
-				ex = tryFunc(iter.returnIter)
+				ex = tryFunc(iters[i].returnIter)
 			}
 		}
 	}
@@ -494,12 +493,10 @@ func (r *Runtime) iterator_concat(call FunctionCall) Value {
 		openMethod func(FunctionCall) Value
 	}
 	iterables := make([]iterable, len(call.Arguments))
-	var item Value
 	for i := range call.Arguments {
-		item = call.Arguments[i]
-		obj, ok := item.(*Object)
+		obj, ok := call.Arguments[i].(*Object)
 		if !ok {
-			panic(r.NewTypeError("%s is not an object", item.String()))
+			panic(r.NewTypeError("%s is not an object", call.Arguments[i].String()))
 		}
 		method := toMethod(obj.self.getSym(SymIterator, nil))
 		if method == nil {
@@ -591,17 +588,15 @@ func (r *Runtime) iteratorZip(iters []*iteratorRecord, mode iteratorZipMode, pad
 			return nil, false
 		}
 		results := make([]Value, len(iters))
-		var iter *iteratorRecord
 		for i := range iters {
 			if iters[i] == nil {
 				results[i] = padding[i]
 				continue
 			}
-			iter = iters[i]
 			var value Value
 			var ok bool
 			if ex := tryFunc(func() {
-				value, ok = iter.stepValue()
+				value, ok = iters[i].stepValue()
 			}); ex != nil {
 				iters[i] = nil
 				closeIterators(iters, ex)
@@ -632,8 +627,8 @@ func (r *Runtime) iteratorZip(iters []*iteratorRecord, mode iteratorZipMode, pad
 					return nil, false
 				}
 				open := false
-				for i := range iters {
-					if iters[i] != nil {
+				for ii := range iters {
+					if iters[ii] != nil {
 						open = true
 						break
 					}
@@ -730,8 +725,8 @@ func (r *Runtime) iterator_zipKeyed(call FunctionCall) Value {
 		padding = make([]Value, len(iters))
 		if paddingOption != nil {
 			if ex := tryFunc(func() {
-				for i, key := range keys {
-					padding[i] = nilSafe(paddingOption.get(key, nil))
+				for i := range keys {
+					padding[i] = nilSafe(paddingOption.get(keys[i], nil))
 				}
 			}); ex != nil {
 				closeIterators(iters, ex)

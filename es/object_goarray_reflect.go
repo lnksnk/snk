@@ -47,8 +47,8 @@ func (c *valueArrayCache) shrink(newlen int) {
 	if len(*c) > newlen {
 		tail := (*c)[newlen:]
 		for i := range tail {
-			if item := tail[i]; item != nil {
-				copyReflectValueWrapper(item)
+			if tail[i] != nil {
+				copyReflectValueWrapper(tail[i])
 				tail[i] = nil
 			}
 		}
@@ -306,7 +306,7 @@ func (i *goArrayReflectPropIter) next() (propIterItem, iterNextFunc) {
 }
 
 func (o *objectGoArrayReflect) stringKeys(all bool, accum []Value) []Value {
-	for i := 0; i < o.fieldsValue.Len(); i++ {
+	for i := range o.fieldsValue.Len() {
 		accum = append(accum, asciiString(strconv.Itoa(i)))
 	}
 

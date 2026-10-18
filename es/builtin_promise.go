@@ -192,8 +192,8 @@ func (r *Runtime) enqueuePromiseJob(job func()) {
 }
 
 func (r *Runtime) triggerPromiseReactions(reactions []*promiseReaction, argument Value) {
-	for i := range reactions {
-		r.enqueuePromiseJob(r.newPromiseReactionJob(reactions[i], argument))
+	for ri := range reactions {
+		r.enqueuePromiseJob(r.newPromiseReactionJob(reactions[ri], argument))
 	}
 }
 

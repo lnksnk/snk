@@ -535,7 +535,7 @@ func (o *objectGoReflect) esValue() Value {
 
 func (r *Runtime) buildFieldInfo(t reflect.Type, index []int, info *reflectFieldsInfo) {
 	n := t.NumField()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		field := t.Field(i)
 		name := field.Name
 		isExported := ast.IsExported(name)

@@ -131,8 +131,8 @@ func (r *Runtime) string_fromcharcode(call FunctionCall) Value {
 
 func (r *Runtime) string_fromcodepoint(call FunctionCall) Value {
 	var sb StringBuilder
-	for i := range call.Arguments {
-		num := call.Arguments[i].ToNumber()
+	for ai := range call.Arguments {
+		num := call.Arguments[ai].ToNumber()
 		var c rune
 		if numInt, ok := num.(valueInt); ok {
 			if numInt < 0 || numInt > utf8.MaxRune {
@@ -255,8 +255,8 @@ func (r *Runtime) stringproto_concat(call FunctionCall) Value {
 	if allAscii {
 		var buf strings.Builder
 		buf.Grow(toStringLen(totalLen))
-		for i := range strs {
-			buf.WriteString(strs[i].String())
+		for si := range strs {
+			buf.WriteString(strs[si].String())
 		}
 		return asciiString(buf.String())
 	}
@@ -264,12 +264,10 @@ func (r *Runtime) stringproto_concat(call FunctionCall) Value {
 	buf := make([]uint16, totalLen+1)
 	buf[0] = unistring.BOM
 	pos := 1
-	var s String
-	for is := range strs {
-		s = strs[is]
-		switch s := s.(type) {
+	for si := range strs {
+		switch s := strs[si].(type) {
 		case asciiString:
-			for i := range len(s) {
+			for i := 0; i < len(s); i++ {
 				buf[pos] = uint16(s[i])
 				pos++
 			}
@@ -607,11 +605,10 @@ func (r *Runtime) stringReplace(s String, found []regexpResult, newstring String
 	lastIndex := 0
 	lengthS := s.Length()
 	if rcall != nil {
-		var item regexpResult
-		for im := range found {
-			item = found[im]
-			if item.indexes[0] != lastIndex {
-				buf.WriteSubstring(s, lastIndex, item.indexes[0])
+		for i := range found {
+			item := &found[i]
+			if (*item).indexes[0] != lastIndex {
+				buf.WriteSubstring(s, lastIndex, (*item).indexes[0])
 			}
 			matchCount := len(item.indexes) / 2
 			argumentList := make([]Value, matchCount+2, matchCount+3)
@@ -619,17 +616,17 @@ func (r *Runtime) stringReplace(s String, found []regexpResult, newstring String
 				offset := 2 * index
 				if item.indexes[offset] != -1 {
 					if u == nil {
-						argumentList[index] = a[item.indexes[offset]:item.indexes[offset+1]]
+						argumentList[index] = a[(*item).indexes[offset]:(*item).indexes[offset+1]]
 					} else {
-						argumentList[index] = u.Substring(item.indexes[offset], item.indexes[offset+1])
+						argumentList[index] = u.Substring((*item).indexes[offset], (*item).indexes[offset+1])
 					}
 				} else {
 					argumentList[index] = _undefined
 				}
 			}
-			argumentList[matchCount] = intToValue(int64(item.indexes[0]))
+			argumentList[matchCount] = intToValue(int64((*item).indexes[0]))
 			argumentList[matchCount+1] = s
-			groups := r.createRegexpGroupsObj(argumentList[:matchCount], item.groups)
+			groups := r.createRegexpGroupsObj(argumentList[:matchCount], (*item).groups)
 			if groups != nil {
 				argumentList = append(argumentList, groups)
 			}
@@ -638,43 +635,42 @@ func (r *Runtime) stringReplace(s String, found []regexpResult, newstring String
 				Arguments: argumentList,
 			}).toString()
 			buf.WriteString(replacement)
-			lastIndex = item.indexes[1]
+			lastIndex = (*item).indexes[1]
 		}
 	} else {
-		var item regexpResult
-		for im := range found {
-			item = found[im]
-			if item.indexes[0] != lastIndex {
-				buf.WriteString(s.Substring(lastIndex, item.indexes[0]))
+		for i := range found {
+			item := &found[i]
+			if (*item).indexes[0] != lastIndex {
+				buf.WriteString(s.Substring(lastIndex, (*item).indexes[0]))
 			}
-			matchCount := len(item.indexes) / 2
+			matchCount := len((*item).indexes) / 2
 			var namedGroups map[unistring.String]int
-			writeSubstitution(s, item.indexes[0], matchCount, func(idx int) String {
-				if item.indexes[idx*2] != -1 {
+			writeSubstitution(s, (*item).indexes[0], matchCount, func(idx int) String {
+				if (*item).indexes[idx*2] != -1 {
 					if u == nil {
-						return a[item.indexes[idx*2]:item.indexes[idx*2+1]]
+						return a[(*item).indexes[idx*2]:item.indexes[idx*2+1]]
 					}
-					return u.Substring(item.indexes[idx*2], item.indexes[idx*2+1])
+					return u.Substring((*item).indexes[idx*2], (*item).indexes[idx*2+1])
 				}
 				return stringEmpty
 			}, func(ref String) String {
 				if namedGroups == nil {
-					namedGroups = createRegexpGroupsMap(item)
+					namedGroups = createRegexpGroupsMap((*item))
 				}
 				if len(namedGroups) == 0 {
 					return nil
 				}
 				if idx, exists := namedGroups[ref.string()]; exists {
-					if item.indexes[idx] != -1 {
+					if (*item).indexes[idx] != -1 {
 						if u == nil {
-							return a[item.indexes[idx]:item.indexes[idx+1]]
+							return a[(*item).indexes[idx]:(*item).indexes[idx+1]]
 						}
-						return u.Substring(item.indexes[idx], item.indexes[idx+1])
+						return u.Substring((*item).indexes[idx], (*item).indexes[idx+1])
 					}
 				}
 				return stringEmpty
 			}, newstring, &buf)
-			lastIndex = item.indexes[1]
+			lastIndex = (*item).indexes[1]
 		}
 	}
 

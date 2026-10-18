@@ -463,14 +463,15 @@ func (self *_RegExp_parser) scanEscape(inClass bool) {
 	valueOffset := self.chrOffset
 
 	if length > 0 {
-		// length := length; length > 0; length--
-		for range length {
+		var len = length
+		for len > 0 {
 			digit := uint32(digitValue(self.chr))
 			if digit >= base {
 				// Not a valid digit
 				goto skip
 			}
 			self.read()
+			len--
 		}
 	} else {
 		for self.chr != '}' && self.chr != -1 {

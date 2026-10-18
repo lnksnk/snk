@@ -186,7 +186,7 @@ func (b *unicodeStringBuilder) writeString(s String) {
 		b.buf = append(b.buf, u[1:]...)
 		b.unicode = true
 	} else {
-		for i := 0; i < len(a); i++ {
+		for i := range len(a) {
 			b.buf = append(b.buf, uint16(a[i]))
 		}
 	}
@@ -257,7 +257,7 @@ func (b *StringBuilder) WriteString(s String) {
 func (b *StringBuilder) WriteUTF8String(s string) {
 	firstUnicodeIdx := 0
 	if b.ascii() {
-		for i := 0; i < len(s); i++ {
+		for i := range len(s) {
 			if s[i] >= utf8.RuneSelf {
 				b.switchToUnicode(len(s))
 				b.unicodeBuilder.writeASCIIString(s[:i])
@@ -517,7 +517,7 @@ func (s unicodeString) Concat(other String) String {
 	b := make([]uint16, len(s)+len(a))
 	copy(b, s)
 	b1 := b[len(s):]
-	for i := 0; i < len(a); i++ {
+	for i := range len(a) {
 		b1[i] = uint16(a[i])
 	}
 	return unicodeString(b)

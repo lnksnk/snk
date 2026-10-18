@@ -4258,14 +4258,12 @@ func (vm *vm) createGlobalFuncBindings(names []unistring.String, d bool) {
 	if o, ok := o.(*templatedObject); ok {
 		shortcutObj = o
 	}
-	var name unistring.String
 	for i := range names {
-		name = names[i]
 		var desc PropertyDescriptor
-		prop := o.getOwnPropStr(name)
+		prop := o.getOwnPropStr(names[i])
 		desc.Value = vm.stack[b+i]
 		if shortcutObj != nil && prop == nil && shortcutObj.extensible {
-			shortcutObj._putProp(name, desc.Value, true, true, d)
+			shortcutObj._putProp(names[i], desc.Value, true, true, d)
 		} else {
 			if prop, ok := prop.(*valueProperty); ok && !prop.configurable {
 				// no-op
@@ -4279,10 +4277,10 @@ func (vm *vm) createGlobalFuncBindings(names []unistring.String, d bool) {
 				}
 			}
 			if shortcutObj != nil {
-				shortcutObj.defineOwnPropertyStr(name, desc, true)
+				shortcutObj.defineOwnPropertyStr(names[i], desc, true)
 			} else {
-				o.defineOwnPropertyStr(name, desc, true)
-				o.setOwnStr(name, desc.Value, false) // not a bug, see https://262.ecma-international.org/#sec-createglobalfunctionbinding
+				o.defineOwnPropertyStr(names[i], desc, true)
+				o.setOwnStr(names[i], desc.Value, false) // not a bug, see https://262.ecma-international.org/#sec-createglobalfunctionbinding
 			}
 		}
 	}
@@ -4292,13 +4290,11 @@ func (vm *vm) createGlobalFuncBindings(names []unistring.String, d bool) {
 func (vm *vm) checkBindFuncsGlobal(names []unistring.String) {
 	o := vm.r.globalObject.self
 	sn := vm.r.global.stash.names
-	var name unistring.String
-	for ni := range names {
-		name = names[ni]
-		if _, exists := sn[name]; exists {
-			panic(vm.alreadyDeclared(name))
+	for i := range names {
+		if _, exists := sn[names[i]]; exists {
+			panic(vm.alreadyDeclared(names[i]))
 		}
-		prop := o.getOwnPropStr(name)
+		prop := o.getOwnPropStr(names[i])
 		allowed := true
 		switch prop := prop.(type) {
 		case nil:
@@ -4307,7 +4303,7 @@ func (vm *vm) checkBindFuncsGlobal(names []unistring.String) {
 			allowed = prop.configurable || prop.getterFunc == nil && prop.setterFunc == nil && prop.writable && prop.enumerable
 		}
 		if !allowed {
-			panic(vm.r.NewTypeError("Cannot redefine global function '%s'", name))
+			panic(vm.r.NewTypeError("Cannot redefine global function '%s'", names[i]))
 		}
 	}
 }
@@ -4315,18 +4311,16 @@ func (vm *vm) checkBindFuncsGlobal(names []unistring.String) {
 func (vm *vm) checkBindLexGlobal(names []unistring.String) {
 	o := vm.r.globalObject.self
 	s := &vm.r.global.stash
-	var name unistring.String
 	for i := range names {
-		name = names[i]
-		if _, exists := s.names[name]; exists {
+		if _, exists := s.names[names[i]]; exists {
 			goto fail
 		}
-		if prop, ok := o.getOwnPropStr(name).(*valueProperty); ok && !prop.configurable {
+		if prop, ok := o.getOwnPropStr(names[i]).(*valueProperty); ok && !prop.configurable {
 			goto fail
 		}
 		continue
 	fail:
-		panic(vm.alreadyDeclared(name))
+		panic(vm.alreadyDeclared(names[i]))
 	}
 }
 
@@ -4337,13 +4331,10 @@ type bindVars struct {
 
 func (d *bindVars) exec(vm *vm) {
 	var target *stash
-
-	var name unistring.String
 	for i := range d.names {
-		name = d.names[i]
 		for s := vm.stash; s != nil; s = s.outer {
-			if idx, exists := s.names[name]; exists && idx&maskVar == 0 {
-				vm.throw(vm.alreadyDeclared(name))
+			if idx, exists := s.names[d.names[i]]; exists && idx&maskVar == 0 {
+				vm.throw(vm.alreadyDeclared(d.names[i]))
 				return
 			}
 			if s.isVariable() {
@@ -4357,8 +4348,7 @@ func (d *bindVars) exec(vm *vm) {
 	}
 	deletable := d.deletable
 	for i := range d.names {
-		name = d.names[i]
-		target.createBinding(name, deletable)
+		target.createBinding(d.names[i], deletable)
 	}
 	vm.pc++
 }
@@ -4376,11 +4366,11 @@ func (b *bindGlobal) exec(vm *vm) {
 	vm.checkBindVarsGlobal(b.vars)
 
 	s := &vm.r.global.stash
-	for i := range b.lets {
-		s.createLexBinding(b.lets[i], false)
+	for ni := range b.lets {
+		s.createLexBinding(b.lets[ni], false)
 	}
-	for i := range b.consts {
-		s.createLexBinding(b.consts[i], true)
+	for ni := range b.consts {
+		s.createLexBinding(b.consts[ni], true)
 	}
 	vm.createGlobalFuncBindings(b.funcs, b.deletable)
 	vm.createGlobalVarBindings(b.vars, b.deletable)
@@ -5147,8 +5137,8 @@ func (formalArgs createArgsUnmapped) exec(vm *vm) {
 		i++
 	}
 
-	for vi := range vm.stash.extraArgs {
-		args._put(unistring.String(strconv.Itoa(i)), vm.stash.extraArgs[vi])
+	for _, v := range vm.stash.extraArgs {
+		args._put(unistring.String(strconv.Itoa(i)), v)
 		i++
 	}
 

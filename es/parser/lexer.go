@@ -118,7 +118,7 @@ func (self *_parser) scanIdentifier() (string, unistring.String, bool, string) {
 					return "", "", false, "Invalid Unicode escape sequence"
 				}
 			} else {
-				for j := 0; j < 4; j++ {
+				for range 4 {
 					self.read()
 					decimal, ok := hex2decimal(byte(self.chr))
 					if !ok {
@@ -1043,7 +1043,6 @@ func parseStringLiteral(literal string, length int, unicode, strict bool) (unist
 					if len(str) < size {
 						return "", fmt.Sprintf("invalid escape: \\%s: len(%q) != %d", string(chr), str, size)
 					}
-					//  j := 0; j < size; j++
 					for j := range size {
 						decimal, ok := hex2decimal(str[j])
 						if !ok {

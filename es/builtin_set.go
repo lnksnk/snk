@@ -421,8 +421,8 @@ func (r *Runtime) builtin_newSet(args []Value, newTarget *Object) *Object {
 			if adder == r.global.setAdder {
 				ir := r.getIterator(arg, nil)
 				if stdArr != nil && ir.nextRes != nil {
-					for i := range stdArr.values {
-						so.m.set(stdArr.values[i], nil)
+					for vi := range stdArr.values {
+						so.m.set(stdArr.values[vi], nil)
 					}
 				} else {
 					ir.iterate(func(item Value) {
@@ -436,8 +436,8 @@ func (r *Runtime) builtin_newSet(args []Value, newTarget *Object) *Object {
 				}
 				ir := r.getIterator(arg, nil)
 				if stdArr != nil && ir.nextRes != nil {
-					for i := range stdArr.values {
-						adderFn(FunctionCall{This: o, Arguments: []Value{stdArr.values[i]}})
+					for im := range stdArr.values {
+						adderFn(FunctionCall{This: o, Arguments: []Value{stdArr.values[im]}})
 					}
 				} else {
 					ir.iterate(func(item Value) {

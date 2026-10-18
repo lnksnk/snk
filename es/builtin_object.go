@@ -216,8 +216,8 @@ func (r *Runtime) _defineProperties(o *Object, p Value) {
 			prop: r.toPropertyDescriptor(item.value),
 		})
 	}
-	for i := range list {
-		o.defineOwnProperty(list[i].name, list[i].prop, true)
+	for pi := range list {
+		o.defineOwnProperty(list[pi].name, list[pi].prop, true)
 	}
 }
 

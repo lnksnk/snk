@@ -307,8 +307,8 @@ func (r *Runtime) builtin_unescape(call FunctionCall) Value {
 		if r >= utf8.RuneSelf && !unicode {
 			unicodeBuf = make([]uint16, 1, l+1)
 			unicodeBuf[0] = unistring.BOM
-			for i := range asciiBuf {
-				unicodeBuf = append(unicodeBuf, uint16(asciiBuf[i]))
+			for _, b := range asciiBuf {
+				unicodeBuf = append(unicodeBuf, uint16(b))
 			}
 			asciiBuf = nil
 			unicode = true

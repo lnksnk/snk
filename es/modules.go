@@ -2,7 +2,6 @@ package es
 
 import (
 	"errors"
-	"slices"
 	"sort"
 )
 
@@ -183,9 +182,9 @@ func (r *Runtime) CyclicModuleRecordEvaluate(c CyclicModuleRecord, resolve HostR
 	state := r.evaluationState
 	_, err := r.innerModuleEvaluation(state, c, &stackInstance, 0, resolve)
 	if err != nil {
-		for mi := range stackInstance {
-			state.status[stackInstance[mi]] = Evaluated
-			state.evaluationError[stackInstance[mi]] = err
+		for _, m := range stackInstance {
+			state.status[m] = Evaluated
+			state.evaluationError[m] = err
 		}
 
 		capability.reject(r.ToValue(err))
@@ -285,7 +284,7 @@ func (r *Runtime) innerModuleEvaluation(
 	}
 
 	if state.dfsAncestorIndex[c] == state.dfsIndex[c] {
-		for i := range slices.Backward(*stack) {
+		for i := len(*stack) - 1; i >= 0; i-- {
 			requiredModuleInstance := (*stack)[i]
 			*stack = (*stack)[:i]
 			if state.asyncEvaluation[requiredModuleInstance] == 0 {
@@ -336,21 +335,19 @@ func (r *Runtime) asyncModuleExecutionFulfilled(state *evaluationState, c Cyclic
 	sort.Slice(execList, func(i, j int) bool {
 		return state.asyncEvaluation[execList[i]] < state.asyncEvaluation[execList[j]]
 	})
-	var m CyclicModuleInstance
 	for mi := range execList {
-		m = execList[mi]
-		if state.status[m] == Evaluated {
+		if state.status[execList[mi]] == Evaluated {
 			continue
 		}
-		if m.HasTLA() {
-			r.executeAsyncModule(state, m)
+		if execList[mi].HasTLA() {
+			r.executeAsyncModule(state, execList[mi])
 		} else {
-			result, err := m.ExecuteModule(r, nil, nil)
+			result, err := execList[mi].ExecuteModule(r, nil, nil)
 			if err != nil {
-				r.asyncModuleExecutionRejected(state, m, err)
+				r.asyncModuleExecutionRejected(state, execList[mi], err)
 				continue
 			}
-			state.status[m] = Evaluated
+			state.status[execList[mi]] = Evaluated
 			if cap := state.topLevelCapability[r.findModuleRecord(result).(CyclicModuleRecord)]; cap != nil {
 				// TODO having the module instances going through Values and back is likely not a *great* idea
 				cap.resolve(_undefined)
@@ -411,8 +408,8 @@ func (r *Runtime) GetActiveScriptOrModule() interface{} { // have some better ty
 	if r.vm.prg != nil && r.vm.prg.scriptOrModule != nil {
 		return r.vm.prg.scriptOrModule
 	}
-	for _, v := range slices.Backward(r.vm.callStack) {
-		prg := v.prg
+	for i := len(r.vm.callStack) - 1; i >= 0; i-- {
+		prg := r.vm.callStack[i].prg
 		if prg != nil && prg.scriptOrModule != nil {
 			return prg.scriptOrModule
 		}

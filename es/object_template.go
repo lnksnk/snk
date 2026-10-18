@@ -120,8 +120,8 @@ func (o *templatedObject) getOwnPropStr(p unistring.String) Value {
 func (o *templatedObject) materialiseSymbols() {
 	if o.symValues == nil {
 		o.symValues = newOrderedMap(nil)
-		for pi := range o.tmpl.symPropNames {
-			o.symValues.set(o.tmpl.symPropNames[pi], o.tmpl.symProps[o.tmpl.symPropNames[pi]](o.val.runtime))
+		for _, p := range o.tmpl.symPropNames {
+			o.symValues.set(p, o.tmpl.symProps[p](o.val.runtime))
 		}
 	}
 }

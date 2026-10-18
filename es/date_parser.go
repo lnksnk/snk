@@ -149,9 +149,9 @@ var tzAbbrs = []struct {
 }
 
 func getTimeZoneAbbr(s string) (int, string, bool) {
-	for _, tzAbbr := range tzAbbrs {
-		if s, ok := match(s, tzAbbr.nameLower); ok {
-			return tzAbbr.offset, s, true
+	for ztai := range tzAbbrs {
+		if s, ok := match(s, tzAbbrs[ztai].nameLower); ok {
+			return tzAbbrs[ztai].offset, s, true
 		}
 	}
 	return 0, s, false
@@ -347,9 +347,10 @@ func parseDateOtherString(s string) (date, bool) {
 			level := 1
 			s = s[1:]
 			for len(s) > 0 && level != 0 {
-				if s[0] == '(' {
+				switch s[0] {
+				case '(':
 					level++
-				} else if s[0] == ')' {
+				case ')':
 					level--
 				}
 				s = s[1:]

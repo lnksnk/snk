@@ -94,8 +94,8 @@ func (c *compiler) updateEnterBlock(enter *enterBlock) {
 		stashSize = len(scope.bindings)
 		enter.names = scope.makeNamesMap()
 	} else {
-		for bi := range scope.bindings {
-			if scope.bindings[bi].inStash {
+		for i := range scope.bindings {
+			if scope.bindings[i].inStash {
 				stashSize++
 			} else {
 				stackSize++
@@ -164,8 +164,8 @@ func (c *compiler) compileTryStatement(v *ast.TryStatement, needResult bool) {
 					c.emitPatternLexicalAssign(target, init)
 				}, false)
 			}
-			for fi := range funcs {
-				c.scope.bindNameLexical(funcs[fi].Function.Name.Name, true, int(funcs[fi].Function.Name.Idx1())-1)
+			for _, decl := range funcs {
+				c.scope.bindNameLexical(decl.Function.Name.Name, true, int(decl.Function.Name.Idx1())-1)
 			}
 			c.compileLexicalDeclarations(list, true)
 			c.compileFunctions(funcs)
@@ -268,8 +268,8 @@ func (c *compiler) compileLabeledForStatement(v *ast.ForStatement, needResult bo
 	case *ast.ForLoopInitializerLexicalDecl:
 		enterIterBlock = c.compileForHeadLexDecl(&init.LexicalDeclaration, needResult)
 	case *ast.ForLoopInitializerVarDeclList:
-		for ei := range init.List {
-			c.compileVarBinding(init.List[ei])
+		for _, expr := range init.List {
+			c.compileVarBinding(expr)
 		}
 	case *ast.ForLoopInitializerExpression:
 		c.compileExpression(init.Expression).emitGetter(false)
@@ -432,8 +432,8 @@ func (c *compiler) compileLabeledForInOfStatement(into ast.ForInto, source ast.E
 		s := c.scope
 		used := len(c.block.breaks) > 0 || s.isDynamic()
 		if !used {
-			for bi := range s.bindings {
-				if s.bindings[bi].useCount() > 0 {
+			for _, b := range s.bindings {
+				if b.useCount() > 0 {
 					used = true
 					break
 				}
@@ -442,8 +442,8 @@ func (c *compiler) compileLabeledForInOfStatement(into ast.ForInto, source ast.E
 		if used {
 			// We need the stack untouched because it contains the source.
 			// This is not the most optimal way, but it's an edge case, hopefully quite rare.
-			for bi := range s.bindings {
-				s.bindings[bi].moveToStash()
+			for _, b := range s.bindings {
+				b.moveToStash()
 			}
 			enter := &enterBlock{}
 			c.p.code[enterPos] = enter
@@ -862,11 +862,7 @@ func (c *compiler) compileExportDeclaration(expr *ast.ExportDeclaration) {
 		if from.NamedExports == nil { // star export - nothing to do
 			return
 		}
-
-		var name *ast.ExportSpecifier
-
-		for ni := range from.NamedExports.ExportsList {
-			name = from.NamedExports.ExportsList[ni]
+		for _, name := range from.NamedExports.ExportsList {
 			value, ambiguous := module.ResolveExport(name.IdentifierName.String())
 
 			if ambiguous || value == nil { // also ambiguous
@@ -911,9 +907,7 @@ func (c *compiler) compileImportDeclaration(expr *ast.ImportDeclaration) {
 			)
 		}
 		if named := expr.ImportClause.NamedImports; named != nil {
-			var name *ast.ImportSpecifier
-			for ni := range named.ImportsList {
-				name = named.ImportsList[ni]
+			for _, name := range named.ImportsList {
 				value, ambiguous := module.ResolveExport(name.IdentifierName.String())
 
 				if ambiguous || value == nil {
@@ -1062,14 +1056,14 @@ func (c *compiler) compileLexicalBinding(expr *ast.Binding) {
 }
 
 func (c *compiler) compileVariableStatement(v *ast.VariableStatement) {
-	for ei := range v.List {
-		c.compileVarBinding(v.List[ei])
+	for _, expr := range v.List {
+		c.compileVarBinding(expr)
 	}
 }
 
 func (c *compiler) compileLexicalDeclaration(v *ast.LexicalDeclaration) {
-	for ei := range v.List {
-		c.compileLexicalBinding(v.List[ei])
+	for _, e := range v.List {
+		c.compileLexicalBinding(e)
 	}
 }
 
@@ -1081,11 +1075,11 @@ func (c *compiler) isEmptyResult(st ast.Statement) bool {
 	case *ast.LabelledStatement:
 		return c.isEmptyResult(st.Statement)
 	case *ast.BlockStatement:
-		for bsi := range st.List {
-			if _, ok := st.List[bsi].(*ast.BranchStatement); ok {
+		for si := range st.List {
+			if _, ok := st.List[si].(*ast.BranchStatement); ok {
 				return true
 			}
-			if !c.isEmptyResult(st.List[bsi]) {
+			if !c.isEmptyResult(st.List[si]) {
 				return false
 			}
 		}
@@ -1232,8 +1226,8 @@ func (c *compiler) compileSwitchStatement(v *ast.SwitchStatement, needResult boo
 	c.compileExpression(v.Discriminant).emitGetter(true)
 
 	var funcs []*ast.FunctionDeclaration
-	for csi := range v.Body {
-		f := c.extractFunctions(v.Body[csi].Consequent)
+	for _, s := range v.Body {
+		f := c.extractFunctions(s.Consequent)
 		funcs = append(funcs, f...)
 	}
 	var scopeDeclared bool
@@ -1243,8 +1237,8 @@ func (c *compiler) compileSwitchStatement(v *ast.SwitchStatement, needResult boo
 		c.createFunctionBindings(funcs)
 	}
 
-	for csi := range v.Body {
-		scopeDeclared = c.compileLexicalDeclarations(v.Body[csi].Consequent, scopeDeclared)
+	for _, s := range v.Body {
+		scopeDeclared = c.compileLexicalDeclarations(s.Consequent, scopeDeclared)
 	}
 
 	var enter *enterBlock
@@ -1283,8 +1277,8 @@ func (c *compiler) compileSwitchStatement(v *ast.SwitchStatement, needResult boo
 
 	jumps := make([]int, len(v.Body))
 
-	for i := range v.Body {
-		if s := v.Body[i]; s.Test != nil {
+	for i, s := range v.Body {
+		if s.Test != nil {
 			if db != nil {
 				db.emitGet()
 			} else {
@@ -1316,11 +1310,11 @@ func (c *compiler) compileSwitchStatement(v *ast.SwitchStatement, needResult boo
 		c.emit(nil)
 	}
 
-	for i := range v.Body {
-		if v.Body[i].Test != nil || i != 0 {
+	for i, s := range v.Body {
+		if s.Test != nil || i != 0 {
 			c.p.code[jumps[i]] = jump(len(c.p.code) - jumps[i])
 		}
-		c.compileStatements(v.Body[i].Consequent, needResult)
+		c.compileStatements(s.Consequent, needResult)
 	}
 
 	if jumpNoMatch != -1 {

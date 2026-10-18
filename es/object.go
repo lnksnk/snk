@@ -985,11 +985,11 @@ func (o *baseObject) export(ctx *objectExportCtx) interface{} {
 		return v
 	}
 	keys := o.stringKeys(false, nil)
-	m := make(map[string]any, len(keys))
+	m := make(map[string]interface{}, len(keys))
 	ctx.put(o.val, m)
-	for ik := range keys {
-		itemNameStr := keys[ik].String()
-		v := o.val.self.getStr(keys[ik].string(), nil)
+	for itmk := range keys {
+		itemNameStr := keys[itmk].String()
+		v := o.val.self.getStr(keys[itmk].string(), nil)
 		if v != nil {
 			m[itemNameStr] = exportValue(v, ctx)
 		} else {

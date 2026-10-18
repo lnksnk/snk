@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/go-sourcemap/sourcemap"
@@ -148,13 +147,10 @@ func (self *_parser) parseStatement() ast.Statement {
 		colon := self.idx
 		self.next() // :
 		label := identifier.Name
-		/*for _, value := range self.scope.labels {
-			if label == value {
+		for li := range self.scope.labels {
+			if label == self.scope.labels[li] {
 				self.error(identifier.Idx0(), "Label '%s' already exists", label)
 			}
-		}*/
-		if slices.Contains(self.scope.labels, label) {
-			self.error(identifier.Idx0(), "Label '%s' already exists", label)
 		}
 		self.scope.labels = append(self.scope.labels, label) // Push the label
 		self.scope.allowLet = false
@@ -838,9 +834,8 @@ func (self *_parser) parseForOrForInStatement() ast.Statement {
 }
 
 func (self *_parser) ensurePatternInit(list []*ast.Binding) {
-	var item *ast.Binding
 	for i := range list {
-		item = list[i]
+		item := list[i]
 		if _, ok := item.Target.(ast.Pattern); ok {
 			if item.Initializer == nil {
 				self.error(item.Idx1(), "Missing initializer in destructuring declaration")

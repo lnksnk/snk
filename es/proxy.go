@@ -924,17 +924,16 @@ func (p *proxyObject) filterKeys(vals []Value, all, symbols bool) []Value {
 	if !all {
 		k := 0
 		for i := range vals {
-			val := vals[i]
 			var prop Value
 			if symbols {
-				if s, ok := val.(*Symbol); ok {
+				if s, ok := vals[i].(*Symbol); ok {
 					prop = p.getOwnPropSym(s)
 				} else {
 					continue
 				}
 			} else {
-				if _, ok := val.(*Symbol); !ok {
-					prop = p.getOwnPropStr(val.string())
+				if _, ok := vals[i].(*Symbol); !ok {
+					prop = p.getOwnPropStr(vals[i].string())
 				} else {
 					continue
 				}

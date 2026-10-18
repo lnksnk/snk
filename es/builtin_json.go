@@ -368,8 +368,8 @@ func (ctx *_builtinJSON_stringifyContext) str(key Value, holder *Object) bool {
 			ctx.buf.WriteString(value1.self.getStr("rawJSON", nil).String())
 			return true
 		}
-		for i := range ctx.stack {
-			if value1.SameAs(ctx.stack[i]) {
+		for oi := range ctx.stack {
+			if value1.SameAs(ctx.stack[oi]) {
 				ctx.r.typeErrorResult(true, "Converting circular structure to JSON")
 			}
 		}
@@ -454,18 +454,18 @@ func (ctx *_builtinJSON_stringifyContext) jo(object *Object) {
 	}
 
 	empty := true
-	for _, name := range props {
+	for ni := range props {
 		off := ctx.buf.Len()
 		if !empty {
 			ctx.buf.WriteString(separator)
 		}
-		ctx.quote(name.toString())
+		ctx.quote(props[ni].toString())
 		if ctx.gap != "" {
 			ctx.buf.WriteString(": ")
 		} else {
 			ctx.buf.WriteByte(':')
 		}
-		if ctx.str(name, object) {
+		if ctx.str(props[ni], object) {
 			if empty {
 				empty = false
 			}

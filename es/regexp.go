@@ -81,8 +81,8 @@ func (result *regexpResult) appendIndexesAndGroup(index1, index2 int, name strin
 
 func submatchesToRegexpResults(submatches [][]int, groups []string) []regexpResult {
 	results := make([]regexpResult, 0, len(submatches))
-	for vi := range submatches {
-		results = append(results, regexpResult{indexes: submatches[vi], groups: groups})
+	for _, val := range submatches {
+		results = append(results, regexpResult{indexes: val, groups: groups})
 	}
 	return results
 }
@@ -180,9 +180,9 @@ func (p *regexpPattern) findAllSubmatchIndex(s String, start int, limit int, sti
 			pm, str := buildUTF8PosMap(u)
 			if pm != nil {
 				res := p.regexpWrapper.findAllSubmatchIndex(str, limit, sticky)
-				for rei := range res {
-					for i, idx := range res[rei].indexes {
-						res[rei].indexes[i] = pm.get(idx)
+				for resi := range res {
+					for i, idx := range res[resi].indexes {
+						res[resi].indexes[i] = pm.get(idx)
 					}
 				}
 				return res
@@ -270,14 +270,12 @@ func (r *regexp2Wrapper) findSubmatchIndexUTF16(s String, start int, doCache boo
 		indexes: make([]int, 0, len(groups)<<1),
 		groups:  make([]string, 0, len(groups)),
 	}
-
-	var group regexp2.Group
-	for grpi := range groups {
-		group = groups[grpi]
+	for gpi := range groups {
+		group := &groups[gpi]
 		if len(group.Captures) > 0 {
-			result.appendIndexesAndGroup(group.RuneIndex, group.RuneIndex+group.RuneLength, group.Name)
+			result.appendIndexesAndGroup((*group).RuneIndex, (*group).RuneIndex+(*group).RuneLength, (*group).Name)
 		} else {
-			result.appendIndexesAndGroup(-1, 0, group.Name)
+			result.appendIndexesAndGroup(-1, 0, (*group).Name)
 		}
 	}
 	return result
@@ -338,14 +336,12 @@ func (r *regexp2Wrapper) findSubmatchIndexUnicode(s String, start int, doCache b
 		indexes: make([]int, 0, len(groups)<<1),
 		groups:  make([]string, 0, len(groups)),
 	}
-
-	var group regexp2.Group
-	for grpi := range groups {
-		group = groups[grpi]
-		if len(group.Captures) > 0 {
-			result.appendIndexesAndGroup(posMap[group.RuneIndex], posMap[group.RuneIndex+group.RuneLength], group.Name)
+	for gpi := range groups {
+		group := &groups[gpi]
+		if len((*group).Captures) > 0 {
+			result.appendIndexesAndGroup(posMap[(*group).RuneIndex], posMap[(*group).RuneIndex+(*group).RuneLength], (*group).Name)
 		} else {
-			result.appendIndexesAndGroup(-1, 0, group.Name)
+			result.appendIndexesAndGroup(-1, 0, (*group).Name)
 		}
 	}
 	return result
@@ -369,13 +365,14 @@ func (r *regexp2Wrapper) findAllSubmatchIndexUTF16(s String, start, limit int, s
 			groups:  make([]string, 0, len(groups)),
 		}
 
-		for grpi := range groups {
-			if group := groups[grpi]; len(group.Captures) > 0 {
-				startPos := group.RuneIndex
-				endPos := group.RuneIndex + group.RuneLength
-				result.appendIndexesAndGroup(startPos, endPos, group.Name)
+		for gip := range groups {
+			group := &groups[gip]
+			if len((*group).Captures) > 0 {
+				startPos := (*group).RuneIndex
+				endPos := (*group).RuneIndex + (*group).RuneLength
+				result.appendIndexesAndGroup(startPos, endPos, (*group).Name)
 			} else {
-				result.appendIndexesAndGroup(-1, 0, group.Name)
+				result.appendIndexesAndGroup(-1, 0, (*group).Name)
 			}
 		}
 
@@ -455,13 +452,14 @@ func (r *regexp2Wrapper) findAllSubmatchIndexUnicode(s unicodeString, start, lim
 			groups:  make([]string, 0, len(groups)),
 		}
 
-		for grpi := range groups {
-			if group := groups[grpi]; len(group.Captures) > 0 {
-				start := posMap[group.RuneIndex]
-				end := posMap[group.RuneIndex+group.RuneLength]
-				result.appendIndexesAndGroup(start, end, group.Name)
+		for gpi := range groups {
+			group := &groups[gpi]
+			if len((*group).Captures) > 0 {
+				start := posMap[(*group).RuneIndex]
+				end := posMap[(*group).RuneIndex+(*group).RuneLength]
+				result.appendIndexesAndGroup(start, end, (*group).Name)
 			} else {
-				result.appendIndexesAndGroup(-1, 0, group.Name)
+				result.appendIndexesAndGroup(-1, 0, (*group).Name)
 			}
 		}
 
@@ -504,11 +502,12 @@ func (r *regexpWrapper) findAllSubmatchIndex(s string, limit int, sticky bool) [
 	pos := 0
 	if sticky {
 		for i := range results {
-			if result := results[i]; len(result.indexes) > 1 {
-				if result.indexes[0] != pos {
+			result := &results[i]
+			if len((*result).indexes) > 1 {
+				if (*result).indexes[0] != pos {
 					return results[:i]
 				}
-				pos = result.indexes[1]
+				pos = (*result).indexes[1]
 			}
 		}
 	}
@@ -533,9 +532,9 @@ func (r *regexpWrapper) findSubmatchIndexUnicode(s unicodeString, fullUnicode bo
 	if fullUnicode {
 		posMap, runes, _, _ := buildPosMap(&lenientUtf16Decoder{utf16Reader: s.utf16Reader()}, s.Length(), 0)
 		result := regexpResult{indexes: wrapped.FindReaderSubmatchIndex(&arrayRuneReader{runes: runes})}
-		for i := range result.indexes {
-			if result.indexes[i] >= 0 {
-				result.indexes[i] = posMap[result.indexes[i]]
+		for i, item := range result.indexes {
+			if item >= 0 {
+				result.indexes[i] = posMap[item]
 			}
 		}
 		return result

@@ -76,7 +76,7 @@ func (s asciiString) utf16RuneReader() io.RuneReader {
 
 func (s asciiString) utf16Runes() []rune {
 	runes := make([]rune, len(s))
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		runes[i] = rune(s[i])
 	}
 	return runes
@@ -84,7 +84,7 @@ func (s asciiString) utf16Runes() []rune {
 
 func (s asciiString) utf16() []uint16 {
 	u := make([]uint16, len(s))
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		u[i] = uint16(s[i])
 	}
 	return u
@@ -329,7 +329,7 @@ func (s asciiString) Concat(other String) String {
 	if u != nil {
 		b := make([]uint16, len(s)+len(u))
 		b[0] = unistring.BOM
-		for i := 0; i < len(s); i++ {
+		for i := range len(s) {
 			b[i+1] = uint16(s[i])
 		}
 		copy(b[len(s)+1:], u[1:])

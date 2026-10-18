@@ -591,7 +591,6 @@ func (r *Runtime) typedArrayProto_filter(call FunctionCall) Value {
 		buf := make([]byte, 0, ta.length*ta.elemSize)
 		captured := 0
 		rawVal := make([]byte, ta.elemSize)
-		//k := 0; k < ta.length; k++
 		for k := range ta.length {
 			if ta.isValidIntegerIndex(k) {
 				fc.Arguments[0] = ta.typedArray.get(ta.offset + k)
@@ -1464,8 +1463,8 @@ func (r *Runtime) typedArrayFrom(ctor, items *Object, mapFn, thisValue Value, ta
 				This:      thisValue,
 				Arguments: []Value{nil, nil},
 			}
-			for idx := range values {
-				fc.Arguments[0], fc.Arguments[1] = values[idx], intToValue(int64(idx))
+			for idx, val := range values {
+				fc.Arguments[0], fc.Arguments[1] = val, intToValue(int64(idx))
 				ta.typedArray.set(idx, mapFc(fc))
 			}
 		}

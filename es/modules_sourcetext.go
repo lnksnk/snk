@@ -118,19 +118,14 @@ type exportEntry struct {
 func importEntriesFromAst(declarations []*ast.ImportDeclaration) ([]importEntry, error) {
 	var result []importEntry
 	names := make(map[string]struct{}, len(declarations))
-
-	var importDeclarion *ast.ImportDeclaration
-	for imdi := range declarations {
-		importDeclarion = declarations[imdi]
+	for _, importDeclarion := range declarations {
 		importClause := importDeclarion.ImportClause
 		if importDeclarion.FromClause == nil {
 			continue // no entry in this case
 		}
 		moduleRequest := importDeclarion.FromClause.ModuleSpecifier.String()
 		if named := importClause.NamedImports; named != nil {
-			var el *ast.ImportSpecifier
-			for eli := range named.ImportsList {
-				el = named.ImportsList[eli]
+			for _, el := range named.ImportsList {
 				localName := el.Alias.String()
 				if localName == "" {
 					localName = el.IdentifierName.String()
@@ -231,16 +226,14 @@ func exportEntriesFromArrayPattern(op *ast.ArrayPattern, lex bool) []exportEntry
 
 func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 	var result []exportEntry
-	var exportDeclaration *ast.ExportDeclaration
-	for edi := range declarations {
-		exportDeclaration = declarations[edi]
+	for _, exportDeclaration := range declarations {
 		if exportDeclaration.ExportFromClause != nil {
 			exportFromClause := exportDeclaration.ExportFromClause
 			if namedExports := exportFromClause.NamedExports; namedExports != nil {
-				for spi := range namedExports.ExportsList {
+				for _, spec := range namedExports.ExportsList {
 					result = append(result, exportEntry{
-						localName:  namedExports.ExportsList[spi].IdentifierName.String(),
-						exportName: namedExports.ExportsList[spi].Alias.String(),
+						localName:  spec.IdentifierName.String(),
+						exportName: spec.Alias.String(),
 						offset:     int(exportDeclaration.Idx0()),
 					})
 				}
@@ -263,8 +256,8 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 				panic("wat")
 			}
 		} else if variableDeclaration := exportDeclaration.Variable; variableDeclaration != nil {
-			for li := range variableDeclaration.List {
-				switch i := variableDeclaration.List[li].Target.(type) {
+			for _, l := range variableDeclaration.List {
+				switch i := l.Target.(type) {
 				case *ast.Identifier:
 					result = append(result, exportEntryFromIdentifier(i, false))
 				case *ast.ObjectPattern:
@@ -276,8 +269,8 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 				}
 			}
 		} else if LexicalDeclaration := exportDeclaration.LexicalDeclaration; LexicalDeclaration != nil {
-			for li := range LexicalDeclaration.List {
-				switch i := LexicalDeclaration.List[li].Target.(type) {
+			for _, l := range LexicalDeclaration.List {
+				switch i := l.Target.(type) {
 				case *ast.Identifier:
 					result = append(result, exportEntryFromIdentifier(i, true))
 				case *ast.ObjectPattern:
@@ -307,9 +300,7 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 			})
 		} else if fromClause := exportDeclaration.FromClause; fromClause != nil {
 			if namedExports := exportDeclaration.NamedExports; namedExports != nil {
-				var spec *ast.ExportSpecifier
-				for spi := range namedExports.ExportsList {
-					spec = namedExports.ExportsList[spi]
+				for _, spec := range namedExports.ExportsList {
 					alias := spec.IdentifierName.String()
 					if spec.Alias != "" {
 						alias = spec.Alias.String()
@@ -325,9 +316,7 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 				panic("wat")
 			}
 		} else if namedExports := exportDeclaration.NamedExports; namedExports != nil {
-			var spec *ast.ExportSpecifier
-			for spi := range namedExports.ExportsList {
-				spec = namedExports.ExportsList[spi]
+			for _, spec := range namedExports.ExportsList {
 				alias := spec.IdentifierName.String()
 				if spec.Alias != "" {
 					alias = spec.Alias.String()
@@ -375,8 +364,8 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 
 func requestedModulesFromAst(statements []ast.Statement) []string {
 	var result []string
-	for sti := range statements {
-		switch imp := statements[sti].(type) {
+	for si := range statements {
+		switch imp := statements[si].(type) {
 		case *ast.ImportDeclaration:
 			if imp.FromClause != nil {
 				result = append(result, imp.FromClause.ModuleSpecifier.String())
@@ -431,29 +420,28 @@ func ModuleFromAST(body *ast.Program, resolveModule HostResolveImportedModuleFun
 	var localExportEntries []exportEntry
 	var starExportEntries []exportEntry
 	exportEntries := exportEntriesFromAst(body.ExportEntries)
-	var ee exportEntry
-	for eei := range exportEntries {
-		ee = exportEntries[eei]
-		if ee.moduleRequest == "" { // technically nil
-			ie, ok := findImportByLocalName(importEntries, ee.localName)
+	for ei := range exportEntries {
+		ee := &exportEntries[ei]
+		if (*ee).moduleRequest == "" { // technically nil
+			ie, ok := findImportByLocalName(importEntries, (*ee).localName)
 			if !ok {
-				localExportEntries = append(localExportEntries, ee)
+				localExportEntries = append(localExportEntries, (*ee))
 				continue
 			}
 			if ie.importName == "*" {
-				localExportEntries = append(localExportEntries, ee)
+				localExportEntries = append(localExportEntries, (*ee))
 			} else {
 				indirectExportEntries = append(indirectExportEntries, exportEntry{
 					moduleRequest: ie.moduleRequest,
 					importName:    ie.importName,
-					exportName:    ee.exportName,
+					exportName:    (*ee).exportName,
 				})
 			}
 		} else {
-			if ee.importName == "*" && ee.exportName == "" {
-				starExportEntries = append(starExportEntries, ee)
+			if (*ee).importName == "*" && ee.exportName == "" {
+				starExportEntries = append(starExportEntries, (*ee))
 			} else {
-				indirectExportEntries = append(indirectExportEntries, ee)
+				indirectExportEntries = append(indirectExportEntries, (*ee))
 			}
 		}
 	}
@@ -495,11 +483,11 @@ func ModuleFromAST(body *ast.Program, resolveModule HostResolveImportedModuleFun
 
 func (module *SourceTextModuleRecord) getExportedNamesWithotStars() []string {
 	exportedNames := make([]string, 0, len(module.localExportEntries)+len(module.indirectExportEntries))
-	for eli := range module.localExportEntries {
-		exportedNames = append(exportedNames, module.localExportEntries[eli].exportName)
+	for ei := range module.localExportEntries {
+		exportedNames = append(exportedNames, module.localExportEntries[ei].exportName)
 	}
-	for eii := range module.indirectExportEntries {
-		exportedNames = append(exportedNames, module.indirectExportEntries[eii].exportName)
+	for ei := range module.indirectExportEntries {
+		exportedNames = append(exportedNames, module.indirectExportEntries[ei].exportName)
 	}
 	return exportedNames
 }

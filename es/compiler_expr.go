@@ -1266,9 +1266,7 @@ func (e *compiledTemplateLiteral) emitGetter(putOnStack bool) {
 	} else {
 		cooked := make([]Value, len(e.elements))
 		raw := make([]Value, len(e.elements))
-		var elt *ast.TemplateElement
-		for i := range e.elements {
-			elt = e.elements[i]
+		for i, elt := range e.elements {
 			raw[i] = &valueProperty{
 				enumerable: true,
 				value:      newStringValue(elt.Literal),
@@ -1289,8 +1287,8 @@ func (e *compiledTemplateLiteral) emitGetter(putOnStack bool) {
 			raw:    raw,
 			cooked: cooked,
 		})
-		for i := range e.expressions {
-			e.expressions[i].emitGetter(true)
+		for expi := range e.expressions {
+			e.expressions[expi].emitGetter(true)
 		}
 		e.c.emit(call(len(e.expressions) + 1))
 	}
@@ -1376,9 +1374,8 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 	}
 
 	// First, make sure that the first bindings correspond to the formal parameters
-	var item *ast.Binding
 	for i := range e.parameterList.List {
-		item = e.parameterList.List[i]
+		item := e.parameterList.List[i]
 		switch tgt := item.Target.(type) {
 		case *ast.Identifier:
 			offset := int(tgt.Idx) - 1
@@ -1421,9 +1418,8 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 
 	// create pattern bindings
 	if hasPatterns {
-		var item *ast.Binding
 		for i := range e.parameterList.List {
-			item = e.parameterList.List[i]
+			item := e.parameterList.List[i]
 			switch tgt := item.Target.(type) {
 			case *ast.Identifier:
 				// we already created those in the previous loop, skipping
@@ -1454,9 +1450,8 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 				calleeBinding = b
 			}
 		}
-		var item *ast.Binding
 		for i := range e.parameterList.List {
-			item = e.parameterList.List[i]
+			item := e.parameterList.List[i]
 			if pattern, ok := item.Target.(ast.Pattern); ok {
 				i := i
 				e.c.compilePatternInitExpr(func() {
@@ -1506,8 +1501,8 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 				})
 		}
 		if firstForwardRef != -1 {
-			for i := range s.bindings {
-				s.bindings[i].inStash = true
+			for bi := range s.bindings {
+				s.bindings[bi].inStash = true
 			}
 			s.argsInStash = true
 			s.needStash = true
@@ -1521,11 +1516,8 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 		e.c.compileDeclList(e.declarationList, false)
 		e.c.createFunctionBindings(funcs)
 		e.c.compileLexicalDeclarationsFuncBody(body, calleeBinding)
-
-		var b *binding
-		for ib := range varScope.bindings {
-			b = varScope.bindings[ib]
-			if b.isVar {
+		for bi := range varScope.bindings {
+			if b := varScope.bindings[bi]; b.isVar {
 				if parentBinding := s.boundNames[b.name]; parentBinding != nil && parentBinding != calleeBinding {
 					parentBinding.emitGet()
 					b.emitSetP()
@@ -1858,10 +1850,8 @@ func (e *compiledClassLiteral) emitGetter(putOnStack bool) {
 		outer: e.c.classScope,
 	}
 
-	var elt ast.ClassElement
 	for idx := range e.body {
-		elt = e.body[idx]
-		switch elt := elt.(type) {
+		switch elt := e.body[idx].(type) {
 		case *ast.ClassStaticBlock:
 			if len(elt.Block.List) > 0 {
 				staticsCount++
@@ -1947,11 +1937,10 @@ func (e *compiledClassLiteral) emitGetter(putOnStack bool) {
 	// <- sp
 
 	for idx := range e.body {
-		elt = e.body[idx]
 		if idx == ctorMethodIdx {
 			continue
 		}
-		switch elt := elt.(type) {
+		switch elt := e.body[idx].(type) {
 		case *ast.ClassStaticBlock:
 			if len(elt.Block.List) > 0 {
 				f := e.c.compileFunctionLiteral(&ast.FunctionLiteral{
@@ -2188,16 +2177,16 @@ func (e *compiledClassLiteral) compileFieldsAndStaticBlocks(elements []clsElemen
 	thisBinding := s.createThisBinding()
 
 	valIdx := 0
-	var elt clsElement
+
 	for ei := range elements {
-		elt = elements[ei]
-		if elt.body != nil {
+		elt := &elements[ei]
+		if (*elt).body != nil {
 			e.c.emit(dup) // this
-			elt.body.emitGetter(true)
-			elt.body.addSrcMap()
+			(*elt).body.emitGetter(true)
+			(*elt).body.addSrcMap()
 			e.c.emit(call(0), pop)
 		} else {
-			if elt.computed {
+			if (*elt).computed {
 				e.c.emit(loadComputedKey(valIdx))
 				valIdx++
 			}
@@ -2210,14 +2199,14 @@ func (e *compiledClassLiteral) compileFieldsAndStaticBlocks(elements []clsElemen
 			} else {
 				e.c.emit(loadUndef)
 			}
-			if elt.privateName != nil {
+			if (*elt).privateName != nil {
 				e.c.emit(&definePrivateProp{
-					idx: elt.privateName.idx,
+					idx: (*elt).privateName.idx,
 				})
-			} else if elt.computed {
+			} else if (*elt).computed {
 				e.c.emit(defineProp{})
 			} else {
-				e.c.emit(definePropKeyed(elt.key))
+				e.c.emit(definePropKeyed((*elt).key))
 			}
 		}
 	}
@@ -2343,8 +2332,8 @@ func (e *compiledNewExpr) emitGetter(putOnStack bool) {
 		e.c.emit(startVariadic)
 	}
 	e.callee.emitGetter(true)
-	for ei := range e.args {
-		e.args[ei].emitGetter(true)
+	for epi := range e.args {
+		e.args[epi].emitGetter(true)
 	}
 	e.addSrcMap()
 	if e.isVariadic {
@@ -2418,7 +2407,7 @@ func (c *compiler) compileMetaProperty(v *ast.MetaProperty) compiledExpr {
 
 func (e *compiledSequenceExpr) emitGetter(putOnStack bool) {
 	if len(e.sequence) > 0 {
-		for i := range len(e.sequence) {
+		for i := range len(e.sequence) - 1 {
 			e.sequence[i].emitGetter(false)
 		}
 		e.sequence[len(e.sequence)-1].emitGetter(putOnStack)
@@ -2427,8 +2416,8 @@ func (e *compiledSequenceExpr) emitGetter(putOnStack bool) {
 
 func (c *compiler) compileSequenceExpression(v *ast.SequenceExpression) compiledExpr {
 	s := make([]compiledExpr, len(v.Sequence))
-	for i, expr := range v.Sequence {
-		s[i] = c.compileExpression(expr)
+	for i := range v.Sequence {
+		s[i] = c.compileExpression(v.Sequence[i])
 	}
 	r := &compiledSequenceExpr{
 		sequence: s,
@@ -2992,13 +2981,14 @@ func (e *compiledArrayLiteral) emitGetter(putOnStack bool) {
 	mark := len(e.c.p.code)
 	e.c.emit(nil)
 	for vi := range e.expr.Value {
-		if spread, ok := e.expr.Value[vi].(*ast.SpreadElement); ok {
+		v := &e.expr.Value[vi]
+		if spread, ok := (*v).(*ast.SpreadElement); ok {
 			hasSpread = true
 			e.c.compileExpression(spread.Expression).emitGetter(true)
 			e.c.emit(pushArraySpread)
 		} else {
-			if v := e.expr.Value[vi]; v != nil {
-				e.c.emitExpr(e.c.compileExpression(v), true)
+			if (*v) != nil {
+				e.c.emitExpr(e.c.compileExpression((*v)), true)
 			} else {
 				e.c.emit(loadNil)
 			}
@@ -3094,8 +3084,8 @@ func (e *compiledCallExpr) emitGetter(putOnStack bool) {
 	}
 	calleeName := e.c.emitCallee(e.callee)
 
-	for ei := range e.args {
-		e.args[ei].emitGetter(true)
+	for epi := range e.args {
+		e.args[epi].emitGetter(true)
 	}
 
 	e.addSrcMap()
@@ -3191,11 +3181,12 @@ func (c *compiler) compileCallExpression(v *ast.CallExpression) compiledExpr {
 	args := make([]compiledExpr, len(v.ArgumentList))
 	isVariadic := false
 	for i := range v.ArgumentList {
-		if spread, ok := v.ArgumentList[i].(*ast.SpreadElement); ok {
+		argExpr := &v.ArgumentList[i]
+		if spread, ok := (*argExpr).(*ast.SpreadElement); ok {
 			args[i] = c.compileSpreadCallArgument(spread)
 			isVariadic = true
 		} else {
-			args[i] = c.compileExpression(v.ArgumentList[i])
+			args[i] = c.compileExpression((*argExpr))
 		}
 	}
 
@@ -3560,33 +3551,33 @@ func (c *compiler) startOptChain() {
 
 func (c *compiler) endOptChain() {
 	lbl := len(c.p.code)
-	for im := range c.block.breaks {
-		c.p.code[c.block.breaks[im]] = jopt(lbl - c.block.breaks[im])
+	for _, item := range c.block.breaks {
+		c.p.code[item] = jopt(lbl - item)
 	}
-	for im := range c.block.conts {
-		c.p.code[c.block.conts[im]] = joptc(lbl - c.block.conts[im])
+	for _, item := range c.block.conts {
+		c.p.code[item] = joptc(lbl - item)
 	}
 	c.block = c.block.outer
 }
 
 func (c *compiler) endOptChainDelete() {
 	lbl := len(c.p.code)
-	for im := range c.block.breaks {
-		c.p.code[c.block.breaks[im]] = joptdel(lbl - c.block.breaks[im])
+	for _, item := range c.block.breaks {
+		c.p.code[item] = joptdel(lbl - item)
 	}
-	for im := range c.block.conts {
-		c.p.code[c.block.conts[im]] = joptdelc(lbl - c.block.conts[im])
+	for _, item := range c.block.conts {
+		c.p.code[item] = joptdelc(lbl - item)
 	}
 	c.block = c.block.outer
 }
 
 func (c *compiler) endOptChainDeleteP() {
 	lbl := len(c.p.code)
-	for im := range c.block.breaks {
-		c.p.code[c.block.breaks[im]] = joptdelP(lbl - c.block.breaks[im])
+	for _, item := range c.block.breaks {
+		c.p.code[item] = joptdelP(lbl - item)
 	}
-	for im := range c.block.conts {
-		c.p.code[c.block.conts[im]] = joptdelcP(lbl - c.block.conts[im])
+	for _, item := range c.block.conts {
+		c.p.code[item] = joptdelcP(lbl - item)
 	}
 	c.block = c.block.outer
 }

@@ -5,7 +5,6 @@ import (
 	"math"
 	"math/bits"
 	"reflect"
-	"slices"
 	"sort"
 	"strconv"
 
@@ -36,8 +35,8 @@ func (a *sparseArrayObject) _setLengthInt(l uint32, throw bool) bool {
 	if l <= a.length {
 		if a.propValueCount > 0 {
 			// Slow path
-			var item sparseArrayItem
-			for _, item = range slices.Backward(a.items) {
+			for i := len(a.items) - 1; i >= 0; i-- {
+				item := a.items[i]
 				if item.idx < l {
 					break
 				}
@@ -276,10 +275,10 @@ func (a *sparseArrayObject) stringKeys(all bool, accum []Value) []Value {
 func (a *sparseArrayObject) setValues(values []Value, objCount int) {
 	a.items = make([]sparseArrayItem, 0, objCount)
 	for i := range values {
-		if val := values[i]; val != nil {
+		if values[i] != nil {
 			a.items = append(a.items, sparseArrayItem{
 				idx:   uint32(i),
-				value: val,
+				value: values[i],
 			})
 		}
 	}
@@ -437,10 +436,9 @@ func (a *sparseArrayObject) export(ctx *objectExportCtx) interface{} {
 	arr := make([]interface{}, a.length)
 	ctx.put(a.val, arr)
 	var prevIdx uint32
-	var item sparseArrayItem
 	for i := range a.items {
-		item = a.items[i]
-		idx := item.idx
+		item := &a.items[i]
+		idx := (*item).idx
 		for i := prevIdx; i < idx; i++ {
 			if a.prototype != nil {
 				if v := a.prototype.self.getIdx(valueInt(i), nil); v != nil {
@@ -448,7 +446,7 @@ func (a *sparseArrayObject) export(ctx *objectExportCtx) interface{} {
 				}
 			}
 		}
-		v := item.value
+		v := (*item).value
 		if v != nil {
 			if prop, ok := v.(*valueProperty); ok {
 				v = prop.get(a.val)
@@ -515,9 +513,7 @@ func (a *sparseArrayObject) exportToArrayOrSlice(dst reflect.Value, typ reflect.
 			dst.Set(reflect.MakeSlice(typ, l, l))
 		}
 		ctx.putTyped(a.val, typ, dst.Interface())
-		var item sparseArrayItem
-		for im := range a.items {
-			item = a.items[im]
+		for _, item := range a.items {
 			idx := item.idx
 			i := toIntStrict(int64(idx))
 			if i >= l {

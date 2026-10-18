@@ -18,9 +18,9 @@ func (e *errorObject) formatStack() String {
 	}
 	b.WriteRune('\n')
 
-	for i := range e.stack {
+	for fi := range e.stack {
 		b.writeASCII("\tat ")
-		e.stack[i].WriteToValueBuilder(&b)
+		e.stack[fi].WriteToValueBuilder(&b)
 		b.WriteRune('\n')
 	}
 	return b.String()

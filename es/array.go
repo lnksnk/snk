@@ -308,11 +308,11 @@ func (a *arrayObject) iterateStringKeys() iterNextFunc {
 }
 
 func (a *arrayObject) stringKeys(all bool, accum []Value) []Value {
-	for i, prop := range a.values {
+	for i := range a.values {
 		name := strconv.Itoa(i)
-		if prop != nil {
+		if a.values[i] != nil {
 			if !all {
-				if prop, ok := prop.(*valueProperty); ok && !prop.enumerable {
+				if prop, ok := a.values[i].(*valueProperty); ok && !prop.enumerable {
 					continue
 				}
 			}
@@ -504,13 +504,13 @@ func (a *arrayObject) export(ctx *objectExportCtx) interface{} {
 	arr := make([]interface{}, a.length)
 	ctx.put(a.val, arr)
 	if a.propValueCount == 0 && a.length == uint32(len(a.values)) && uint32(a.objCount) == a.length {
-		for i, v := range a.values {
-			if v != nil {
-				arr[i] = exportValue(v, ctx)
+		for i := range a.values {
+			if a.values[i] != nil {
+				arr[i] = exportValue(a.values[i], ctx)
 			}
 		}
 	} else {
-		for i := uint32(0); i < a.length; i++ {
+		for i := range a.length {
 			v := a.getIdx(valueInt(i), nil)
 			if v != nil {
 				arr[i] = exportValue(v, ctx)

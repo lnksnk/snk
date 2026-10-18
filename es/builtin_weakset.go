@@ -71,8 +71,8 @@ func (r *Runtime) builtin_newWeakSet(args []Value, newTarget *Object) *Object {
 			if adder == r.global.weakSetAdder {
 				ir := r.getIterator(arg, nil)
 				if stdArr != nil && ir.nextRes != nil {
-					for i := range stdArr.values {
-						wso.s.set(r.weakSetValueRefs(stdArr.values[i]), nil)
+					for vi := range stdArr.values {
+						wso.s.set(r.weakSetValueRefs(stdArr.values[vi]), nil)
 					}
 				} else {
 					ir.iterate(func(item Value) {

@@ -81,10 +81,8 @@ func (r *Runtime) math_hypot(call FunctionCall) Value {
 	var max float64
 	var hasNaN bool
 	absValues := make([]float64, 0, len(call.Arguments))
-	var v Value
-	for i := range call.Arguments {
-		v = call.Arguments[i]
-		arg := nilSafe(v).ToFloat()
+	for vi := range call.Arguments {
+		arg := nilSafe(call.Arguments[vi]).ToFloat()
 		if math.IsNaN(arg) {
 			hasNaN = true
 		} else {
@@ -156,8 +154,8 @@ func (r *Runtime) math_max(call FunctionCall) Value {
 
 NaNLoop:
 	// All arguments still need to be coerced to number according to the specs.
-	for i := range args {
-		nilSafe(args[i]).ToFloat()
+	for ai := range args {
+		nilSafe(args[ai]).ToFloat()
 	}
 	return _NaN
 }
@@ -178,8 +176,8 @@ func (r *Runtime) math_min(call FunctionCall) Value {
 
 NaNLoop:
 	// All arguments still need to be coerced to number according to the specs.
-	for i := range args {
-		nilSafe(args[i]).ToFloat()
+	for ai := range args {
+		nilSafe(args[ai]).ToFloat()
 	}
 	return _NaN
 }

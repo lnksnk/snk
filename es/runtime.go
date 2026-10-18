@@ -544,7 +544,7 @@ func (r *Runtime) CreateObject(proto *Object) *Object {
 	return r.newBaseObject(proto, classObject).val
 }
 
-func (r *Runtime) NewArray(items ...any) *Object {
+func (r *Runtime) NewArray(items ...interface{}) *Object {
 	values := make([]Value, len(items))
 	for i := range items {
 		values[i] = r.ToValue(items[i])
@@ -2135,7 +2135,7 @@ func (r *Runtime) wrapReflectFunc(value reflect.Value) func(FunctionCall) Value 
 		case 1:
 			return r.ToValue(out[0].Interface())
 		default:
-			s := make([]any, len(out))
+			s := make([]interface{}, len(out))
 			for i := range out {
 				s[i] = out[i].Interface()
 			}
@@ -2284,7 +2284,7 @@ func (r *Runtime) toReflectValue(v Value, dst reflect.Value, ctx *objectExportCt
 			}
 			s := dst
 			ctx.putTyped(o, t, s.Addr().Interface())
-			for i := 0; i < typ.NumField(); i++ {
+			for i := range typ.NumField() {
 				field := typ.Field(i)
 				if ast.IsExported(field.Name) {
 					name := field.Name
@@ -2337,16 +2337,16 @@ func (r *Runtime) wrapJSFunc(fn Callable, typ reflect.Type) func(args []reflect.
 				varArg := args[len(args)-1]
 				args = args[:len(args)-1]
 				jsArgs = make([]Value, 0, len(args)+varArg.Len())
-				for i := range args {
-					jsArgs = append(jsArgs, r.ToValue(args[i].Interface()))
+				for ai := range args {
+					jsArgs = append(jsArgs, r.ToValue(args[ai].Interface()))
 				}
 				for i := range varArg.Len() {
 					jsArgs = append(jsArgs, r.ToValue(varArg.Index(i).Interface()))
 				}
 			} else {
 				jsArgs = make([]Value, len(args))
-				for i := range args {
-					jsArgs[i] = r.ToValue(args[i].Interface())
+				for i, arg := range args {
+					jsArgs[i] = r.ToValue(arg.Interface())
 				}
 			}
 		}
@@ -3066,8 +3066,8 @@ func (r *Runtime) leave() {
 	var jobs []func()
 	for len(r.jobQueue) > 0 {
 		jobs, r.jobQueue = r.jobQueue, jobs[:0]
-		for jbi := range jobs {
-			jobs[jbi]()
+		for ji := range jobs {
+			jobs[ji]()
 		}
 	}
 	r.jobQueue = nil
@@ -3220,7 +3220,7 @@ func strToArrayIdx(s unistring.String) uint32 {
 	var n uint32
 	if l < 10 {
 		// guaranteed not to overflow
-		for i := 0; i < len(s); i++ {
+		for i := range len(s) {
 			c := s[i]
 			if c < '0' || c > '9' {
 				return math.MaxUint32
@@ -3331,7 +3331,7 @@ func strToInt64(s unistring.String) (int64, bool) {
 	var n uint64
 	if l < 19 {
 		// guaranteed not to overflow
-		for i := 0; i < len(s); i++ {
+		for i := range len(s) {
 			c := s[i]
 			if c < '0' || c > '9' {
 				return -1, false

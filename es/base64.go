@@ -14,22 +14,26 @@ const (
 	base64LastChunkHandlingStop
 )
 
+const basecharspls = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
 var base64DecodeMap = func() (t [256]byte) {
 	for i := range t {
 		t[i] = 0xff
 	}
-	for i, c := range "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/" {
-		t[c] = byte(i)
+	for i := range basecharspls {
+		t[basecharspls[i]] = byte(i)
 	}
 	return
 }()
+
+const basecharsmns = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 var base64DecodeMapUrl = func() (t [256]byte) {
 	for i := range t {
 		t[i] = 0xff
 	}
-	for i, c := range "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" {
-		t[c] = byte(i)
+	for i := range basecharsmns {
+		t[basecharsmns[i]] = byte(i)
 	}
 	return
 }()

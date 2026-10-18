@@ -2,7 +2,6 @@ package es
 
 import (
 	"math"
-	"slices"
 	"sort"
 	"sync"
 )
@@ -168,9 +167,11 @@ func (r *Runtime) arrayproto_pop(call FunctionCall) Value {
 // If false is returned, the caller must ensure the object is popped from the stack when done.
 func (r *Runtime) pushToStringStack(o *Object) bool {
 	// Check for circular reference in the toString stack
-	if slices.Contains(r.toStringStack, o) {
-		// Circular reference detected
-		return true
+	for _, obj := range r.toStringStack {
+		if o == obj {
+			// Circular reference detected
+			return true
+		}
 	}
 
 	// Push this object onto the stack
@@ -213,10 +214,9 @@ func (r *Runtime) arrayproto_join(call FunctionCall) Value {
 		buf.WriteString(element0.toString())
 	}
 
-	// i := 1; i < l; i++
-	for i := range l - 1 {
+	for i := 1; i < l; i++ {
 		buf.WriteString(sep)
-		element := o.self.getIdx(valueInt(int64(i+1)), nil)
+		element := o.self.getIdx(valueInt(int64(i)), nil)
 		if element != nil && element != _undefined && element != _null {
 			buf.WriteString(element.toString())
 		}
@@ -288,7 +288,8 @@ func (r *Runtime) arrayproto_toLocaleString(call FunctionCall) Value {
 			if i > 0 {
 				buf.WriteRune(',')
 			}
-			r.writeItemLocaleString(array.self.getIdx(valueInt(i), nil), &buf)
+			item := array.self.getIdx(valueInt(i), nil)
+			r.writeItemLocaleString(item, &buf)
 		}
 	}
 
@@ -311,7 +312,8 @@ func (r *Runtime) arrayproto_concat_append(a *Object, item Value) {
 			panic(r.NewTypeError("Invalid array length"))
 		}
 		for i := range length {
-			if v := obj.self.getIdx(valueInt(i), nil); v != nil {
+			v := obj.self.getIdx(valueInt(i), nil)
+			if v != nil {
 				createDataPropertyOrThrow(a, intToValue(aLength), v)
 			}
 			aLength++
@@ -362,7 +364,8 @@ func (r *Runtime) arrayproto_slice(call FunctionCall) Value {
 
 	n := int64(0)
 	for start < end {
-		if p := o.self.getIdx(valueInt(start), nil); p != nil {
+		p := o.self.getIdx(valueInt(start), nil)
+		if p != nil {
 			createDataPropertyOrThrow(a, valueInt(n), p)
 		}
 		start++
@@ -403,7 +406,8 @@ func (r *Runtime) arrayproto_sort(call FunctionCall) Value {
 		length := toLength(o.self.getStr("length", nil))
 		a := make([]Value, 0, length)
 		for i := range length {
-			if idx := valueInt(i); o.self.hasPropertyIdx(idx) {
+			idx := valueInt(i)
+			if o.self.hasPropertyIdx(idx) {
 				a = append(a, nilSafe(o.self.getIdx(idx, nil)))
 			}
 		}

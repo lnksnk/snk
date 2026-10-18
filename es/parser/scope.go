@@ -1,8 +1,6 @@
 package parser
 
 import (
-	"slices"
-
 	"github.com/lnksnk/snk/es/ast"
 	"github.com/lnksnk/snk/es/unistring"
 )
@@ -43,8 +41,10 @@ func (self *_scope) declare(declaration *ast.VariableDeclaration) {
 }
 
 func (self *_scope) hasLabel(name unistring.String) bool {
-	if slices.Contains(self.labels, name) {
-		return true
+	for li := range self.labels {
+		if self.labels[li] == name {
+			return true
+		}
 	}
 	if self.outer != nil && !self.inFunction {
 		// Crossing a function boundary to look for a label is verboten

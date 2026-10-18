@@ -794,8 +794,8 @@ func (r *Runtime) regexpproto_stdMatcherGeneric(rxObj *Object, s String) Value {
 			return _null
 		}
 		ar := make([]Value, 0, len(a))
-		for i := range a {
-			obj := r.toObject(a[i])
+		for ri := range a {
+			obj := r.toObject(a[ri])
 			matchStr := nilSafe(obj.self.getIdx(valueInt(0), nil)).ToString()
 			ar = append(ar, matchStr)
 		}
@@ -841,8 +841,8 @@ func (r *Runtime) regexpproto_stdMatcher(call FunctionCall) Value {
 			return _null
 		}
 		a := make([]Value, 0, len(results))
-		for i := range results {
-			a = append(a, s.Substring(results[i].indexes[0], results[i].indexes[1]))
+		for ri := range results {
+			a = append(a, s.Substring(results[ri].indexes[0], results[ri].indexes[1]))
 		}
 		return r.newArrayValues(a)
 	} else {
@@ -1107,7 +1107,6 @@ func (r *Runtime) regexpproto_stdSplitter(call FunctionCall) Value {
 	lastIndex := 0
 	found := 0
 
-	var result regexpResult
 	results := pattern.findAllSubmatchIndex(s, 0, -1, false)
 	if targetLength == 0 {
 		if len(results) == 0 {
@@ -1116,36 +1115,36 @@ func (r *Runtime) regexpproto_stdSplitter(call FunctionCall) Value {
 		goto RETURN
 	}
 
-	for i := range results {
-		result = results[i]
-		if result.indexes[0] == result.indexes[1] {
+	for rsi := range results {
+		result := &results[rsi]
+		if (*result).indexes[0] == (*result).indexes[1] {
 			// FIXME Ugh, this is a hack
-			if result.indexes[0] == 0 || result.indexes[0] == targetLength {
+			if (*result).indexes[0] == 0 || (*result).indexes[0] == targetLength {
 				continue
 			}
 		}
 
-		if lastIndex != result.indexes[0] {
-			valueArray = append(valueArray, s.Substring(lastIndex, result.indexes[0]))
+		if lastIndex != (*result).indexes[0] {
+			valueArray = append(valueArray, s.Substring(lastIndex, (*result).indexes[0]))
 			found++
-		} else if lastIndex == result.indexes[0] {
+		} else if lastIndex == (*result).indexes[0] {
 			if lastIndex != -1 {
 				valueArray = append(valueArray, stringEmpty)
 				found++
 			}
 		}
 
-		lastIndex = result.indexes[1]
+		lastIndex = (*result).indexes[1]
 		if found == limit {
 			goto RETURN
 		}
 
-		captureCount := len(result.indexes) / 2
+		captureCount := len((*result).indexes) / 2
 		for index := 1; index < captureCount; index++ {
 			offset := index * 2
 			var value Value
-			if result.indexes[offset] != -1 {
-				value = s.Substring(result.indexes[offset], result.indexes[offset+1])
+			if (*result).indexes[offset] != -1 {
+				value = s.Substring((*result).indexes[offset], (*result).indexes[offset+1])
 			} else {
 				value = _undefined
 			}
@@ -1186,8 +1185,8 @@ func (r *Runtime) regexpproto_stdReplacerGeneric(rxObj *Object, s, replaceStr St
 	lengthS := s.Length()
 	nextSourcePosition := 0
 	var resultBuf StringBuilder
-	for i := range results {
-		obj := r.toObject(results[i])
+	for ri := range results {
+		obj := r.toObject(results[ri])
 		nCaptures := max(toLength(obj.self.getStr("length", nil))-1, 0)
 		matched := nilSafe(obj.self.getIdx(valueInt(0), nil)).toString()
 		matchLength := matched.Length()
