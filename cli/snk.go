@@ -103,17 +103,11 @@ func main() {
 	}
 
 	var fsys = fs.FSys()
-	fs.FSMap("/w3css/", "")
-	fsys.Set("/w3css/w3.css", w3css.W3CSS)
-	fsys.Set("/w3css/index.html", w3css.IndexHTML)
-
-	fs.FSMap("/parsing/", "")
-	fsys.Set("/parsing/parser.js", ui.ParserJS)
-	fsys.Set("/parsing/index.html", ui.IndexHTML)
+	w3css.LoadW3("/w3css/", fs.FSMap, fsys.Set)
+	ui.LoadUi("/parsing/", fs.FSMap, fsys.Set)
 	db.LoadQry("/snk/db/", fs.FSMap, fsys.Set)
-	fs.FSMap("/htmx/", "")
-	fsys.Set("/htmx/htmax.js", htmx.HtmaxJS)
-	fsys.Set("/htmx/index.html", htmx.IndexHTML)
+	htmx.LoadHTMX("/htmx/", fs.FSMap, fsys.Set)
+
 	var lastconpath = appconfpath + appname + "-conf.json"
 	var f, _ = os.Open(appconfpath + appname + "-conf.json")
 	if f == nil {
