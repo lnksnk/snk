@@ -28,7 +28,7 @@ import (
 	_ "github.com/lnksnk/snk/sql/driver/sqlite"
 	snksqlfs "github.com/lnksnk/snk/sql/fs"
 	fst "github.com/lnksnk/snk/template/fs"
-	"github.com/lnksnk/snk/template/fs/fssobek"
+	"github.com/lnksnk/snk/template/fs/fses"
 	"github.com/lnksnk/snk/ui"
 	"github.com/lnksnk/snk/ui/db"
 	"github.com/lnksnk/snk/w3css"
@@ -36,14 +36,13 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/grafana/sobek"
+	es "github.com/lnksnk/snk/es"
 	"github.com/medama-io/go-useragent"
-	_ "github.com/medama-io/go-useragent"
 )
 
-var sbkh = fssobek.SobekHandler()
+var sbkh = fses.ESHandler()
 
-func ESVmSetupRequestContext(ctx context.Context, dh DbHandler, fs Fsys, vm *sobek.Runtime, params parameters.Parameters, ua useragent.UserAgent, vmsetup func(*sobek.Runtime, ...fst.VMItem)) {
+func ESVmSetupRequestContext(ctx context.Context, dh DbHandler, fs Fsys, vm *es.Runtime, params parameters.Parameters, ua useragent.UserAgent, vmsetup func(*es.Runtime, ...fst.VMItem)) {
 	vm.Set("escape", map[string]any{"url": map[string]any{"path": url.PathEscape, "query": url.QueryEscape}, "html": html.EscapeString})
 	vm.Set("unescape", map[string]any{"url": map[string]any{"path": url.PathUnescape, "query": url.QueryUnescape}, "html": html.EscapeString})
 	vm.Set("DB", dh)
@@ -206,7 +205,7 @@ func main() {
 		}
 		return
 	}), fsserve.ServeUTFFunc(func(fi fs.FileInfo, fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, mimeinfo mime.MimeInfo, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error) {
-		fst.ServeHTTP(sbkh, w, r, fi, fsstat, fsopen, func(vm *sobek.Runtime, r *http.Request, vmsetup func(*sobek.Runtime, ...fst.VMItem)) {
+		fst.ServeHTTP(sbkh, w, r, fi, fsstat, fsopen, func(vm *es.Runtime, r *http.Request, vmsetup func(*es.Runtime, ...fst.VMItem)) {
 			var db = InvokeDbHandler(r.Context(), snksql.FormatQueryFunc(func(out io.Writer, name, driver, query string, a ...any) (err error) {
 				return sbkh.FormatQuery(vm, fsstat, fsopen, out, name, driver, query)
 			}), params)
