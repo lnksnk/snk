@@ -19,7 +19,7 @@ type Template[P any, M any] interface {
 	Close() error
 }
 
-type CompileCodeFunc[P any, M any] func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, dependensies map[string]time.Time) (prgm P, modrec M, err error)
+type CompileCodeFunc[P any, M any] func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, dependensies map[string]time.Time) (prgm P, modrec M, err error)
 
 type prgrmtmplt[P any, M any] struct {
 	unmatched map[string]bool
@@ -117,8 +117,6 @@ func isReflectNil(v reflect.Value) bool {
 	return false
 }
 
-var nilv = reflect.ValueOf(nil)
-
 func (pt *prgrmtmplt[P, M]) Eval(evalcntnt EvalContentFunc, evalprgmormod EvalProgramModuleFunc[P, M]) (err error) {
 	cntnt, prgm, modrec, dependants := pt.cntnt, pt.pgrm, pt.modrec, pt.dependants
 	var ispgrm, ismod = !isReflectNil(reflect.ValueOf(prgm)), !isReflectNil(reflect.ValueOf(modrec))
@@ -186,7 +184,7 @@ func LoadTempate[P any, M any](templates snkio.Map[string, Template[P, M]], comp
 		var modrec M
 		if !cde.Empty() {
 			var dependants = map[string]time.Time{}
-			if prgm, modrec, err = compile(cde, rtfi, fstat, fsopen, dependants); err == nil {
+			if prgm, modrec, err = compile(cde, rtfi, dependants); err == nil {
 				tmpltsrc = &prgrmtmplt[P, M]{unmatched: unmatched, matched: matched, dependants: dependants, cntnt: cntnt, pgrm: prgm, modrec: modrec, FileInfo: snkfs.GenFileInfo(rtfi.Path(), rtfi.Base(), rtfi.Size(), rtfi.IsDir(), rtfi.ModTime())}
 				templates.Store(rtfi.Path(), tmpltsrc)
 				return
