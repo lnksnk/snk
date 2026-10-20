@@ -27,6 +27,11 @@ type ConnDefOpenFileSystem interface {
 	QueryOpen(string, ...any) (snkfs.File, error)
 }
 
+type ConnDefMapFileSystem interface {
+	snkfs.MapFileSystem
+	ExecSet(name string, a ...any) error
+}
+
 type ConnDefSetFileSystem interface {
 	snkfs.SetFileSystem
 	ExecSet(name string, a ...any) error
@@ -45,6 +50,7 @@ type conndefinition struct {
 	ConnDefReadDirFileSystem
 	ConnDefSetFileSystem
 	ConnDefAppendFileSystem
+	ConnDefMapFileSystem
 }
 
 func (cf *conndefinition) Query(query string, a ...any) (rows snksql.SqlRows, err error) {
