@@ -11,7 +11,7 @@ import (
 	fst "github.com/lnksnk/snk/template/fs"
 )
 
-func ESHandler() fst.FSTHandler[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object] {
+func ESHandler(fss snkfs.FileSystem) fst.FSTHandler[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object] {
 	return fst.FSTPooledSyncHandler(func() (r *es.Runtime) {
 		r = es.New()
 		return r
@@ -29,9 +29,8 @@ func ESHandler() fst.FSTHandler[*es.Runtime, *es.Program, es.CyclicModuleRecord,
 		}
 		return r
 	}, func(f *fst.FSTHANDLER[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object]) {
-		f.FSTCompileProgram = fst.FSTCompileProgramFunc[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object](func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, dependensies map[string]time.Time) (prgm *es.Program, modrec es.CyclicModuleRecord, err error) {
+		f.FSTCompileProgram = fst.FSTCompileProgramFunc[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object](func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, dependensies map[string]time.Time) (prgm *es.Program, modrec es.CyclicModuleRecord, err error) {
 			var prg *ast.Program
-
 			if prg, err = es.Parse("", cde.String(), parser.IsModule); err != nil {
 				return
 			}
@@ -40,7 +39,7 @@ func ESHandler() fst.FSTHandler[*es.Runtime, *es.Program, es.CyclicModuleRecord,
 				for _, imprt := range prg.ImportEntries {
 					if _, err = f.ResolveHostModule(string(imprt.FromClause.ModuleSpecifier), func(deppath string, depmodtime time.Time) {
 						dependensies[deppath] = depmodtime
-					}, rootfi, fsstat, fsopen); err != nil {
+					}, rootfi); err != nil {
 						return
 					}
 					rqstmods = append(rqstmods, string(imprt.FromClause.ModuleSpecifier))
@@ -49,7 +48,7 @@ func ESHandler() fst.FSTHandler[*es.Runtime, *es.Program, es.CyclicModuleRecord,
 				expl := len(prg.ExportEntries)
 				if expl > 0 {
 					if modrec, err = es.ModuleFromAST(prg, func(referencingScriptOrModule interface{}, specifier string) (md es.ModuleRecord, mderr error) {
-						return f.ResolveHostModule(specifier, nil, rootfi, fsstat, fsopen)
+						return f.ResolveHostModule(specifier, nil, rootfi)
 					}); err != nil {
 						return
 					}
@@ -65,27 +64,18 @@ func ESHandler() fst.FSTHandler[*es.Runtime, *es.Program, es.CyclicModuleRecord,
 			}
 			return
 		})
-		f.FSTExecDependant = fst.FSTExecDependantFunc[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object](execDependant)
-		f.FSTExecModule = fst.FSTExecModuleFunc[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object](execModule)
 		f.FSTExecProgram = fst.FSTExecProgramFunc[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object](func(vm *es.Runtime, pgrm *es.Program, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (err error) {
 			if vm != nil && pgrm != nil {
 				if canrequire {
 					vm.Set("require", func(specifier string) (o *es.Object, err error) {
-						return fst.Require(f, vm, specifier, rootfi, fsstat, fsopen)
+						return fst.Require(f.ProgramModules(), vm, f.CompileProgram, f.ExecModule, specifier, rootfi, fsstat, fsopen)
 					})
 				}
 				_, err = vm.RunProgram(pgrm)
 			}
 			return
 		})
-		f.FSTSetVMArgs = fst.FSTSetVMArgsFunc[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object](func(h fst.FSTHandler[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object], vm *es.Runtime, args ...fst.VMItem) {
-			if vm != nil {
-				for ai := range args {
-					vm.Set(args[ai].Key(), args[ai].Value())
-				}
-			}
-		})
-	})
+	}, fss, fst.ExecModuleFunc[*es.Runtime, es.CyclicModuleRecord, *es.Object](execModule), fst.ExecDependantFunc[*es.Runtime, es.CyclicModuleRecord](execDependant))
 
 }
 

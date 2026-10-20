@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/sobek/parser"
 )
 
-func SobekHandler() fst.FSTHandler[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object] {
+func SobekHandler(fss snkfs.FileSystem) fst.FSTHandler[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object] {
 	return fst.FSTPooledSyncHandler(func() (r *sobek.Runtime) {
 		r = sobek.New()
 		return r
@@ -30,9 +30,8 @@ func SobekHandler() fst.FSTHandler[*sobek.Runtime, *sobek.Program, sobek.CyclicM
 		}
 		return r
 	}, func(f *fst.FSTHANDLER[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object]) {
-		f.FSTCompileProgram = fst.FSTCompileProgramFunc[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object](func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, dependensies map[string]time.Time) (prgm *sobek.Program, modrec sobek.CyclicModuleRecord, err error) {
+		f.FSTCompileProgram = fst.FSTCompileProgramFunc[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object](func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, dependensies map[string]time.Time) (prgm *sobek.Program, modrec sobek.CyclicModuleRecord, err error) {
 			var prg *ast.Program
-
 			if prg, err = sobek.Parse("", cde.String(), parser.IsModule); err != nil {
 				return
 			}
@@ -41,7 +40,7 @@ func SobekHandler() fst.FSTHandler[*sobek.Runtime, *sobek.Program, sobek.CyclicM
 				for _, imprt := range prg.ImportEntries {
 					if _, err = f.ResolveHostModule(string(imprt.FromClause.ModuleSpecifier), func(deppath string, depmodtime time.Time) {
 						dependensies[deppath] = depmodtime
-					}, rootfi, fsstat, fsopen); err != nil {
+					}, rootfi); err != nil {
 						return
 					}
 					rqstmods = append(rqstmods, string(imprt.FromClause.ModuleSpecifier))
@@ -50,7 +49,7 @@ func SobekHandler() fst.FSTHandler[*sobek.Runtime, *sobek.Program, sobek.CyclicM
 				expl := len(prg.ExportEntries)
 				if expl > 0 {
 					if modrec, err = sobek.ModuleFromAST(prg, func(referencingScriptOrModule interface{}, specifier string) (md sobek.ModuleRecord, mderr error) {
-						return f.ResolveHostModule(specifier, nil, rootfi, fsstat, fsopen)
+						return f.ResolveHostModule(specifier, nil, rootfi)
 					}); err != nil {
 						return
 					}
@@ -66,27 +65,18 @@ func SobekHandler() fst.FSTHandler[*sobek.Runtime, *sobek.Program, sobek.CyclicM
 			}
 			return
 		})
-		f.FSTExecDependant = fst.FSTExecDependantFunc[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object](execDependant)
-		f.FSTExecModule = fst.FSTExecModuleFunc[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object](execModule)
 		f.FSTExecProgram = fst.FSTExecProgramFunc[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object](func(vm *sobek.Runtime, pgrm *sobek.Program, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (err error) {
 			if vm != nil && pgrm != nil {
 				if canrequire {
 					vm.Set("require", func(specifier string) (o *sobek.Object, err error) {
-						return fst.Require(f, vm, specifier, rootfi, fsstat, fsopen)
+						return fst.Require(f.ProgramModules(), vm, f.CompileProgram, f.ExecModule, specifier, rootfi, fsstat, fsopen)
 					})
 				}
 				_, err = vm.RunProgram(pgrm)
 			}
 			return
 		})
-		f.FSTSetVMArgs = fst.FSTSetVMArgsFunc[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object](func(h fst.FSTHandler[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object], vm *sobek.Runtime, args ...fst.VMItem) {
-			if vm != nil {
-				for ai := range args {
-					vm.Set(args[ai].Key(), args[ai].Value())
-				}
-			}
-		})
-	})
+	}, fss, fst.ExecModuleFunc[*sobek.Runtime, sobek.CyclicModuleRecord, *sobek.Object](execModule), fst.ExecDependantFunc[*sobek.Runtime, sobek.CyclicModuleRecord](execDependant))
 
 }
 
