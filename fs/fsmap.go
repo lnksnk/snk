@@ -9,7 +9,7 @@ import (
 
 func FSMap(fsroot, fslocalroot string) (err error) {
 	if fsroot == "" || (fsroot != "" && !(fsroot[0] == '/' && fsroot[len(fsroot)-1] == '/')) {
-		err = &fs.PathError{Op: "openFSFile", Path: "", Err: fmt.Errorf("invalid [RootFileSystem]")}
+		err = &fs.PathError{Op: "FSMap", Path: "", Err: fmt.Errorf("invalid [RootFileSystem]")}
 		return
 	}
 	if fslocalroot != "" && fslocalroot[len(fslocalroot)-1] != '/' {
