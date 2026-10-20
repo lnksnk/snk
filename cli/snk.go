@@ -40,18 +40,18 @@ import (
 	"github.com/medama-io/go-useragent"
 )
 
-var sbkh = fses.ESHandler()
+var fsys = fs.FSys()
+var sbkh = fses.ESHandler(fsys)
 
-func ESVmSetupRequestContext(ctx context.Context, dh DbHandler, fs Fsys, vm *es.Runtime, params parameters.Parameters, ua useragent.UserAgent, vmsetup func(*es.Runtime, ...fst.VMItem)) {
-	vm.Set("escape", map[string]any{"url": map[string]any{"path": url.PathEscape, "query": url.QueryEscape}, "html": html.EscapeString})
-	vm.Set("unescape", map[string]any{"url": map[string]any{"path": url.PathUnescape, "query": url.QueryUnescape}, "html": html.EscapeString})
-	vm.Set("DB", dh)
-	vm.Set("FS", fs)
-	vmsetup(vm, []fst.VMItem{[]any{"params", params},
-		[]any{"UA", ua},
-		[]any{"uuid", func() string { return uuid.NewV7().String() }},
-		[]any{"uuid4", func() string { return uuid.NewV4().String() }},
-		[]any{"uuid7", func() string { return uuid.NewV7().String() }}}...)
+func ESVmSetupRequestContext(ctx context.Context, sql snksql.SQLHandler, fs fs.FileSystem, vmr fst.RApi[*es.Runtime], params parameters.Parameters, ua useragent.UserAgent) {
+	vmr.Set("escape", map[string]any{"url": map[string]any{"path": url.PathEscape, "query": url.QueryEscape}, "html": html.EscapeString})
+	vmr.Set("unescape", map[string]any{"url": map[string]any{"path": url.PathUnescape, "query": url.QueryUnescape}, "html": html.EscapeString})
+	vmr.Set("DB", sql)
+	vmr.Set("FS", fs)
+	vmr.Set("UA", ua)
+	vmr.Set("uuid", func() string { return uuid.NewV7().String() })
+	vmr.Set("uuid4", func() string { return uuid.NewV4().String() })
+	vmr.Set("uuid7", func() string { return uuid.NewV7().String() })
 }
 
 func main() {
@@ -101,12 +101,10 @@ func main() {
 		}
 		defaultlocalpath = sourcepath
 	}
-
-	var fsys = fs.FSys()
-	w3css.LoadW3("/w3css/", fs.FSMap, fsys.Set)
-	ui.LoadUi("/parsing/", fs.FSMap, fsys.Set)
-	db.LoadQry("/snk/db/", fs.FSMap, fsys.Set)
-	htmx.LoadHTMX("/htmx/", fs.FSMap, fsys.Set)
+	w3css.LoadW3("/w3css/", fsys.Map, fsys.Set)
+	ui.LoadUi("/parsing/", fsys.Map, fsys.Set)
+	db.LoadQry("/snk/db/", fsys.Map, fsys.Set)
+	htmx.LoadHTMX("/htmx/", fsys.Map, fsys.Set)
 
 	var lastconpath = appconfpath + appname + "-conf.json"
 	var f, _ = os.Open(appconfpath + appname + "-conf.json")
@@ -169,9 +167,9 @@ func main() {
 	snksql.GlobalFormatQuery = snksql.FormatQueryFunc(func(out io.Writer, name, driver, query string, a ...any) (err error) {
 		var sqlfi fs.FileInfo
 		if sqlfi, err = snksqlfs.FSStat(name, driver, query, func(unmtchdpth string) {
-			if prgmtmplts := sbkh.ProgramModules(); prgmtmplts != nil && prgmtmplts.Exist(unmtchdpth) {
+			/*if prgmtmplts := sbkh.ProgramModules(); prgmtmplts != nil && prgmtmplts.Exist(unmtchdpth) {
 				go prgmtmplts.Delete(unmtchdpth)
-			}
+			}*/
 		}, fsys); err == nil {
 			if f, _ := fsys.Open(sqlfi.Path()); f != nil {
 				defer f.Close()
@@ -187,9 +185,9 @@ func main() {
 
 	var hndlr http.Handler
 	hndlr, _ = fsserve.ServeHttp(fsys, fsys, func(path string) {
-		if prgmtmplts := sbkh.ProgramModules(); prgmtmplts != nil && prgmtmplts.Exist(path) {
+		/*if prgmtmplts := sbkh.ProgramModules(); prgmtmplts != nil && prgmtmplts.Exist(path) {
 			go prgmtmplts.Delete(path)
-		}
+		}*/
 	}, fsserve.ServeSTDFunc(func(fi fs.FileInfo, fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, mimeinfo mime.MimeInfo, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error) {
 		var f fs.File
 		if f, err = fsopen.Open(fi.Path()); f != nil {
@@ -199,15 +197,13 @@ func main() {
 		}
 		return
 	}), fsserve.ServeUTFFunc(func(fi fs.FileInfo, fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, mimeinfo mime.MimeInfo, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error) {
-		fst.ServeHTTP(sbkh, w, r, fi, fsstat, fsopen, func(vm *es.Runtime, r *http.Request, vmsetup func(*es.Runtime, ...fst.VMItem)) {
-			var db = InvokeDbHandler(r.Context(), snksql.FormatQueryFunc(func(out io.Writer, name, driver, query string, a ...any) (err error) {
-				return sbkh.FormatQuery(vm, fsstat, fsopen, out, name, driver, query)
-			}), params)
-			var fs = InvokeFSys(fsys, fs.FSMap, fsys, fsstat, fsopen, fsys)
-			vm.Set("hostip", func() string {
+		fst.ServeHTTP(sbkh, w, r, fi, fsstat, fsopen, func(vm *es.Runtime, vmr fst.RApi[*es.Runtime], r *http.Request, vmsetup func(fst.RApi[*es.Runtime], ...fst.VMItem)) {
+			vmr.Set("hostip", func() string {
 				return r.Host
 			})
-			ESVmSetupRequestContext(r.Context(), db, fs, vm, params, ua, vmsetup)
+			ESVmSetupRequestContext(r.Context(), snksql.InvokeSQLHandler(r.Context(), snksql.FormatQueryFunc(func(out io.Writer, name, driver, query string, a ...any) (err error) {
+				return sbkh.FormatQuery(vm, out, name, driver, query)
+			}), params), fsys, vmr, params, ua)
 		})
 		return
 	}), fsserve.UTF8Ext(".html"), fsserve.UTF8Ext(".js"), fsserve.UTF8Ext(".css"), fsserve.UTF8Ext(".json"))
