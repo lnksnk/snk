@@ -20,6 +20,7 @@ type FileSystem interface {
 	Open(name string) (File, error)
 	ReadDir(name string) ([]DirEntry, error)
 	List(path string) ([]FileInfo, error)
+	Map(fsroot, fslocalroot string) (err error)
 }
 
 // Root interface of a [FileSystem]
@@ -43,6 +44,17 @@ type LocalRootFileSystemFunc func() string
 
 func (lclrtfsfunc LocalRootFileSystemFunc) LocalRoot() string {
 	return lclrtfsfunc()
+}
+
+// Map interface of a [FileSystem]
+type MapFileSystem interface {
+	Map(fsroot, fslocalroot string) (err error)
+}
+
+type MapFileSystemFunc func(fsroot, fslocalroot string) (err error)
+
+func (mpfsfnc MapFileSystemFunc) Map(fsroot, fslocalroot string) (err error) {
+	return mpfsfnc(fsroot, fslocalroot)
 }
 
 // Stat interface of a [FileSystem]
@@ -118,8 +130,38 @@ type filesystem struct {
 	fopnmap   snkio.Map[string, OpenFileSystem]
 	fsrddirmp snkio.Map[string, ReadDirFileSystem]
 	fslklroot snkio.Map[string, string]
+	fsrtmpmap snkio.Map[string, MapFileSystem]
 	LocalRootFileSystem
 	RootFileSystem
+}
+
+// Map implements [FileSystem].
+func (f *filesystem) Map(fsroot string, fslocalroot string) (err error) {
+	if f == nil {
+		err = &fs.PathError{Op: "Map", Path: fsroot, Err: fmt.Errorf("nil [FileSystem]")}
+		return
+	}
+
+	return mapFSRoot(f.fsrtmpmap, fsroot, fslocalroot)
+}
+
+func mapFSRoot(mapRootFileSystem snkio.Map[string, MapFileSystem], fsroot, fslocalroot string) (err error) {
+	if mapRootFileSystem == nil {
+		err = &fs.PathError{Op: "mapFSRoot", Path: fsroot, Err: fmt.Errorf("nil snkio.Map[string, MapFileSystem]")}
+		return
+	}
+	if fsroot == "" || (fsroot != "" && !(fsroot[0] == '/' && fsroot[len(fsroot)-1] == '/')) {
+		err = &fs.PathError{Op: "mapFSRoot", Path: fsroot, Err: fmt.Errorf("invalid [RootFileSystem]")}
+		return
+	}
+
+	var fsmapcaller, _ = mapRootFileSystem.Load(fsroot)
+	if fsmapcaller == nil {
+		fsmapcaller = MapFileSystemFunc(FSMap)
+		mapRootFileSystem.Store(fsroot, fsmapcaller)
+	}
+
+	return fsmapcaller.Map(fsroot, fslocalroot)
 }
 
 // Append implements [FileSystem].
@@ -147,10 +189,6 @@ func appendFSFile(appendFileSystem snkio.Map[string, AppendFileSystem], statFile
 	}
 	if statFileSystem == nil {
 		err = &fs.PathError{Op: "statFileSystem", Path: name, Err: fmt.Errorf("nil snkio.Map[string, StatFileSystem]")}
-		return
-	}
-	if fsroot == "" || (fsroot != "" && !(fsroot[0] == '/' && fsroot[len(fsroot)-1] == '/')) {
-		err = &fs.PathError{Op: "appendFileSystem", Path: name, Err: fmt.Errorf("invalid [RootFileSystem]")}
 		return
 	}
 	if name == "" {
@@ -486,6 +524,7 @@ func FSys(a ...any) FileSystem {
 	var fsrddirmp snkio.Map[string, ReadDirFileSystem]
 	var fopnmap snkio.Map[string, OpenFileSystem]
 	var fslklroot snkio.Map[string, string]
+	var fsrtmpmap snkio.Map[string, MapFileSystem]
 	for ai := range a {
 		if lclrtfsfuncd, lclrtfsfunck := a[ai].(LocalRootFileSystem); lclrtfsfunck {
 			if lclrtfs == nil {
@@ -535,6 +574,12 @@ func FSys(a ...any) FileSystem {
 			}
 			continue
 		}
+		if fsrtmpmapd, fsrtmpmapk := a[ai].(snkio.Map[string, MapFileSystem]); fsrtmpmapk {
+			if fsrtmpmap == nil {
+				fsrtmpmap = fsrtmpmapd
+			}
+			continue
+		}
 	}
 	if fstsmp == nil {
 		fstsmp = GlobalFSStat
@@ -554,7 +599,10 @@ func FSys(a ...any) FileSystem {
 	if fstmp == nil {
 		fstmp = GlobalFSSet
 	}
-	return &filesystem{fappndmp: fappndmp, fstmp: fstmp, fstsmp: fstsmp, fopnmap: fopnmap, fsrddirmp: fsrddirmp, fslklroot: fslklroot, LocalRootFileSystem: lclrtfs, RootFileSystem: rtfs}
+	if fsrtmpmap == nil {
+		fsrtmpmap = GlobalFSMapRoot
+	}
+	return &filesystem{fsrtmpmap: fsrtmpmap, fappndmp: fappndmp, fstmp: fstmp, fstsmp: fstsmp, fopnmap: fopnmap, fsrddirmp: fsrddirmp, fslklroot: fslklroot, LocalRootFileSystem: lclrtfs, RootFileSystem: rtfs}
 }
 
 // Global FileSystem ReadDir [[]DirEntry] [snkio.Map]
@@ -577,3 +625,6 @@ var GlobalFSAppend = snkio.NewMap[string, AppendFileSystem]()
 
 // Global MemFile [snkio.Map]
 var GlobalMemFile = snkio.NewMap[string, MemFile]()
+
+// Global FileSystem MapRoot [snkio.Map]
+var GlobalFSMapRoot = snkio.NewMap[string, MapFileSystem]()
