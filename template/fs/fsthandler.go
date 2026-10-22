@@ -110,7 +110,7 @@ func (f *FSTHANDLER[R, P, M, O]) CompileProgram(cde snkio.BufferWriter, rootfi s
 }
 
 // Eval implements [FSTHandler].
-func (f *FSTHANDLER[R, P, M, O]) Eval(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (err error) {
+func (f *FSTHANDLER[R, P, M, O]) Eval(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (result any, err error) {
 	if vmpool := f.vmpool; vmpool != nil {
 		return Eval(f.prgmtmplts, f.CompileProgram, rootfi, fsstat, fsopen, vm, w, vmpool.Get, vmpool.Put, vmsetup, f.execDependant, f.execModule, f.ExecProgram)
 	}
@@ -141,7 +141,7 @@ func (f *FSTHANDLER[R, P, M, O]) ExecModule(vm R, mr M) (o O, err error) {
 }
 
 // ExecProgram implements [FSTHandler].
-func (f *FSTHANDLER[R, P, M, O]) ExecProgram(vm R, pgrm P, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (err error) {
+func (f *FSTHANDLER[R, P, M, O]) ExecProgram(vm R, pgrm P, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (result any, err error) {
 	return f.FSTExecProgram.ExecProgram(vm, pgrm, rootfi, fsstat, fsopen, canrequire)
 }
 
@@ -150,7 +150,7 @@ func (f *FSTHANDLER[R, P, M, O]) Require(vm R, specifier string, rootfi snkfs.Fi
 	return Require(f.prgmtmplts, vm, f.CompileProgram, f.ExecModule, specifier, rootfi, f.fss, f.fss)
 }
 
-func Eval[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, M]], compile func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, dependensies map[string]time.Time) (prgm P, modrec M, err error), rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, invokevm func() R, disposevm func(R), vmsetup FSTSetupVM[R, P, M, O], execDependant ExecDependantFunc[R, M], execModule ExecModuleFunc[R, M, O], execProgram ExecProgramFunc[R, P]) (err error) {
+func EvalR[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, M]], compile func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, dependensies map[string]time.Time) (prgm P, modrec M, err error), rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, execDependant ExecDependantFunc[R, M], execModule ExecModuleFunc[R, M, O], execProgram ExecProgramFunc[R, P], a ...any) (result any, err error) {
 	if prgmtmplts != nil && compile != nil {
 		var evalcntnt EvalContentFunc
 		if w != nil {
@@ -159,7 +159,51 @@ func Eval[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, M
 				return
 			}
 		}
-		return EvalTemplate(prgmtmplts, compile, rootfi, fsstat, fsopen, evalcntnt, func(prgm P, modrec M, dependants map[string]time.Time) (runerr error) {
+		return EvalTemplate(prgmtmplts, compile, rootfi, ".html", fsstat, fsopen, evalcntnt, func(prgm P, modrec M, dependants map[string]time.Time) (runresult any, runerr error) {
+			if isReflectNil(reflect.ValueOf(vm)) {
+				return
+			}
+
+			if !isReflectNil(reflect.ValueOf(modrec)) {
+				_, err = execModule(vm, modrec)
+				return
+			}
+			var vmr RApi[R] = &rapi[R]{vm: vm}
+			var prvprint, prvprintln = SetVMprints[R](vmr, w)
+			if prvprint != nil && prvprintln != nil {
+				defer func() {
+					if vmset, _ := reflect.ValueOf(vm).Interface().(interface {
+						Set(string, any)
+					}); vmset != nil {
+						vmset.Set("print", prvprint)
+						vmset.Set("println", prvprintln)
+					}
+				}()
+			}
+			if !isReflectNil(reflect.ValueOf(modrec)) {
+				_, err = execModule(vm, modrec)
+				return
+			}
+			if err = ExeDependants[R, P, M, O](prgmtmplts, compile, execDependant, vm, rootfi, fsstat, fsopen, dependants); err == nil {
+				return execProgram(vm, prgm, rootfi, fsstat, fsopen, len(dependants) == 0)
+			}
+			return
+		}, a...)
+	}
+	err = fmt.Errorf("nil Program Module handler")
+	return
+}
+
+func Eval[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, M]], compile func(cde snkio.BufferWriter, rootfi snkfs.FileInfo, dependensies map[string]time.Time) (prgm P, modrec M, err error), rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, invokevm func() R, disposevm func(R), vmsetup FSTSetupVM[R, P, M, O], execDependant ExecDependantFunc[R, M], execModule ExecModuleFunc[R, M, O], execProgram ExecProgramFunc[R, P]) (result any, err error) {
+	if prgmtmplts != nil && compile != nil {
+		var evalcntnt EvalContentFunc
+		if w != nil {
+			evalcntnt = func(cntnt snkio.BufferWriter) (wrterr error) {
+				_, wrterr = cntnt.WriteTo(w)
+				return
+			}
+		}
+		return EvalTemplate(prgmtmplts, compile, rootfi, ".html", fsstat, fsopen, evalcntnt, func(prgm P, modrec M, dependants map[string]time.Time) (runresult any, runerr error) {
 			if isReflectNil(reflect.ValueOf(vm)) {
 				if invokevm == nil {
 					return
@@ -172,9 +216,8 @@ func Eval[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, M
 				}
 			}
 			var vmr RApi[R] = &rapi[R]{vm: vm}
-			vmr.Set("Eval", func(a ...any) (result any, err error) {
-				//return h.EvalR(vm, a...)
-				return
+			vmr.Set("eval", func(a ...any) (result any, err error) {
+				return EvalR(prgmtmplts, compile, rootfi, fsstat, fsopen, vm, w, execDependant, execModule, execProgram, a...)
 			})
 			var prvprint, prvprintln = SetVMprints[R](vmr, w)
 			if prvprint != nil && prvprintln != nil {
@@ -255,14 +298,15 @@ func ResolveHostModule[R any, P any, M any, O any](prgmtmplts snkio.Map[string, 
 			mderr = fmt.Errorf("%s module not found", specifier)
 			return
 		}
-		mderr = EvalTemplate(prgmtmplts, compile, mdfi, fsstat, fsopen, nil, func(prgm P, modrec M, dependants map[string]time.Time) (runerr error) {
+		_, mderr = EvalTemplate(prgmtmplts, compile, mdfi, ".js", fsstat, fsopen, nil, func(prgm P, modrec M, dependants map[string]time.Time) (runresult any, runerr error) {
 			if md = modrec; !isReflectNil(reflect.ValueOf(md)) {
 				if fndspecifierpath != nil {
 					fndspecifierpath(mdfi.Path(), mdfi.ModTime())
 				}
 				return
 			}
-			return fmt.Errorf("invalid module code %s", specifier)
+			runerr = fmt.Errorf("invalid module code %s", specifier)
+			return
 		})
 		return
 	}
@@ -311,12 +355,12 @@ type FSTVMPrint func(...any) error
 type FSTVMPrintln func(...any) error
 
 type FSTEval[R any, P any, M any, O any] interface {
-	Eval(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (err error)
+	Eval(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (result any, err error)
 }
 
-type FSTEvalFunc[R any, P any, M any, O any] func(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (err error)
+type FSTEvalFunc[R any, P any, M any, O any] func(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (result any, err error)
 
-func (fstevlfn FSTEvalFunc[R, P, M, O]) Eval(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (err error) {
+func (fstevlfn FSTEvalFunc[R, P, M, O]) Eval(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (result any, err error) {
 	return fstevlfn(rootfi, fsstat, fsopen, vm, w, vmsetup)
 }
 
@@ -358,14 +402,14 @@ type ExecDependantFunc[R any, M any] func(vm R, mr M) (err error)
 type ExecModuleFunc[R any, M any, O any] func(vm R, mr M) (o O, err error)
 
 type FSTExecProgram[R any, P any, M any, O any] interface {
-	ExecProgram(vm R, pgrm P, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (err error)
+	ExecProgram(vm R, pgrm P, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (result any, err error)
 }
 
-type ExecProgramFunc[R any, P any] func(vm R, pgrm P, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (err error)
+type ExecProgramFunc[R any, P any] func(vm R, pgrm P, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (result any, err error)
 
-type FSTExecProgramFunc[R any, P any, M any, O any] func(vm R, pgrm P, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (err error)
+type FSTExecProgramFunc[R any, P any, M any, O any] func(vm R, pgrm P, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (result any, err error)
 
-func (fsthpgrmfnc FSTExecProgramFunc[R, P, M, O]) ExecProgram(vm R, pgrm P, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (err error) {
+func (fsthpgrmfnc FSTExecProgramFunc[R, P, M, O]) ExecProgram(vm R, pgrm P, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (result any, err error) {
 	return fsthpgrmfnc(vm, pgrm, rootfi, fsstat, fsopen, canrequire)
 }
 
@@ -416,7 +460,7 @@ type FTSSetupRequestVM[R any] func(vm R, vmr RApi[R], r *http.Request, vmsetup f
 
 func ServeHTTP[R any, P any, M any, O any](h FSTHandler[R, P, M, O], w http.ResponseWriter, r *http.Request, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, setupRequestVM FTSSetupRequestVM[R]) {
 	var vm R
-	if err := h.Eval(rootfi, fsstat, fsopen, vm, w, func(vmr RApi[R]) {
+	if _, err := h.Eval(rootfi, fsstat, fsopen, vm, w, func(vmr RApi[R]) {
 		if setupRequestVM != nil {
 			setupRequestVM(vm, vmr, r, SetVMArgs[R])
 		}
@@ -509,13 +553,14 @@ func (fstfrmtqryfnc FSTFormatQueryFunc[R]) FormatQuery(vm R, out io.Writer, name
 	return fstfrmtqryfnc(vm, out, name, driver, query, a...)
 }
 
-func FSTFormatSql[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, M]], eval func(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (err error), vm R, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, out io.Writer, name, driver, query string, a ...any) (err error) {
+func FSTFormatSql[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, M]], eval func(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (result any, err error), vm R, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, out io.Writer, name, driver, query string, a ...any) (err error) {
 	return snksqlfs.FSFormatQuery(out, name, driver, query, fsstat, fsopen, func(unmatchedpath string) {
 		if prgmtmplts != nil && prgmtmplts.Exist(unmatchedpath) {
 			go prgmtmplts.Delete(unmatchedpath)
 		}
 	}, func(out io.Writer, sqlfi fs.FileInfo, fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem) (preperr error) {
-		return eval(sqlfi, fsstat, fsopen, vm, out, nil)
+		_, preperr = eval(sqlfi, fsstat, fsopen, vm, out, nil)
+		return
 	})
 }
 
