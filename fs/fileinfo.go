@@ -84,8 +84,9 @@ func (f *fileinfo) Sys() any {
 }
 
 func GenFileInfo(path, base string, szs int64, isdir bool, modTime time.Time) FileInfo {
+
 	var name, root string
-	if path != "" {
+	if path = strings.ReplaceAll(path, "//", "/"); path != "" {
 		if pthi, pthli := strings.Index(path, "/"), strings.LastIndex(path, "/"); pthli > -1 {
 			name = path[pthli+1:]
 			root = path[:pthli+1]
@@ -107,5 +108,8 @@ func GenFileInfo(path, base string, szs int64, isdir bool, modTime time.Time) Fi
 	}
 
 info:
+	if isdir && path[len(path)-1] != '/' {
+		path += "/"
+	}
 	return &fileinfo{name: name, path: path, root: root, base: base, szs: szs, isdir: isdir, modTime: modTime}
 }
