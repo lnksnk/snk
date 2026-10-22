@@ -2,11 +2,13 @@ package fs
 
 import (
 	"io/fs"
+	"path/filepath"
 	"reflect"
 	"time"
 
 	snkfs "github.com/lnksnk/snk/fs"
 	snkio "github.com/lnksnk/snk/io"
+	"github.com/lnksnk/snk/shortning"
 )
 
 type Template[P any, M any] interface {
@@ -15,7 +17,7 @@ type Template[P any, M any] interface {
 	Module() M
 	snkfs.FileInfo
 	Valid(fstat snkfs.StatFileSystem) (valid bool)
-	Eval(evalcntnt EvalContentFunc, evalprgmormod EvalProgramModuleFunc[P, M]) (err error)
+	Eval(evalcntnt EvalContentFunc, evalprgmormod EvalProgramModuleFunc[P, M]) (result any, err error)
 	Close() error
 }
 
@@ -117,7 +119,7 @@ func isReflectNil(v reflect.Value) bool {
 	return false
 }
 
-func (pt *prgrmtmplt[P, M]) Eval(evalcntnt EvalContentFunc, evalprgmormod EvalProgramModuleFunc[P, M]) (err error) {
+func (pt *prgrmtmplt[P, M]) Eval(evalcntnt EvalContentFunc, evalprgmormod EvalProgramModuleFunc[P, M]) (result any, err error) {
 	cntnt, prgm, modrec, dependants := pt.cntnt, pt.pgrm, pt.modrec, pt.dependants
 	var ispgrm, ismod = !isReflectNil(reflect.ValueOf(prgm)), !isReflectNil(reflect.ValueOf(modrec))
 	if evalcntnt != nil && cntnt != nil && !cntnt.Empty() {
@@ -144,31 +146,115 @@ func (pt *prgrmtmplt[P, M]) Close() (err error) {
 }
 
 type EvalContentFunc func(cntnt snkio.BufferWriter) (wrterr error)
-type EvalProgramModuleFunc[P any, M any] func(prgm P, modrec M, dependants map[string]time.Time) (runerr error)
+type EvalProgramModuleFunc[P any, M any] func(prgm P, modrec M, dependants map[string]time.Time) (runresult any, runerr error)
 
 func EvalTemplate[P any, M any](
 	templates snkio.Map[string, Template[P, M]],
-	compile CompileCodeFunc[P, M], rtfi snkfs.FileInfo, fstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, evalcntnt EvalContentFunc, evalprgmormod EvalProgramModuleFunc[P, M]) (err error) {
-	tmplsrc, tmpltk := templates.Load(rtfi.Path())
-	if tmpltk {
-		if tmplsrc.Valid(fstat) {
-			return tmplsrc.Eval(evalcntnt, evalprgmormod)
-		}
-		templates.Delete(rtfi.Path())
-	}
+	compile CompileCodeFunc[P, M], rtfi snkfs.FileInfo, dfltext string, fstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, evalcntnt EvalContentFunc, evalprgmormod EvalProgramModuleFunc[P, M], a ...any) (result any, err error) {
+	al := len(a)
+	var cancache = true
 	var f snkfs.File
+	if al > 0 {
+		var rtfid snkfs.FileInfo
+		if s, sk := a[0].(string); sk {
+			if rtfid, _ = fstat.Stat(s); rtfid != nil {
+				a = a[1:]
+				if al--; al > 0 {
+					cancache = false
+					if f, err = fsopen.Open(rtfid.Path()); f == nil {
+						return
+					}
+				}
+				rtfi = rtfid
+			}
+		}
+		if rtfid == nil {
+			if rtfid, _ = a[0].(snkfs.FileInfo); rtfid != nil {
+				a = a[1:]
+				if al--; al > 0 {
+					cancache = false
+					if f, err = fsopen.Open(rtfid.Path()); f == nil {
+						return
+					}
+				}
+				rtfi = rtfid
+			}
+		}
+		if rtfid == nil {
+			cancache = false
+			if dfltext = filepath.Ext(dfltext); dfltext == "" {
+				return
+			}
+			if !rtfi.IsDir() {
+				var rtext = filepath.Ext(rtfi.Path())
+				if rtext == "" {
+					rtext = dfltext
+				}
+				var chkpth = rtfi.Root() + shortning.Encode(time.Now().UnixNano()) + rtext
+				rtfi = snkfs.GenFileInfo(chkpth, rtfi.Base(), 0, rtfi.IsDir(), time.Now())
+				/*ai := 0
+				var bfa []any
+				for ai < al {
+					if _, argsk := a[ai].(map[string]any); !argsk {
+						bfa = append(bfa, a[ai])
+						a = append(a[:ai], a[ai+1:]...)
+						al--
+						continue
+					}
+					ai++
+				}
+				var bfw snkio.BufferWriter
+				if bfw, err = snkio.WriterBuffer(bfa...); err != nil {
+					return
+				}
+				var bfr, _ = bfw.Reader()
+				f = snkfs.NewFile(snkfs.StatFileFunc(func() (snkfs.FileInfo, error) {
+					return rtfi, nil
+				}), bfr, bfr, snkio.CloseFunc(func() error {
+					bfw.Close()
+					bfr.Close()
+					return nil
+				}))*/
+			}
+		}
+	}
 
-	if f, err = fsopen.Open(rtfi.Path()); f != nil {
+	var tmplsrc, tmpltk = Template[P, M](nil), false
+
+	if cancache {
+		tmplsrc, tmpltk = templates.Load(rtfi.Path())
+		if tmpltk && al == 0 {
+			if tmplsrc.Valid(fstat) {
+				return tmplsrc.Eval(evalcntnt, evalprgmormod)
+			}
+			templates.Delete(rtfi.Path())
+		}
+		if cancache {
+			if f, err = fsopen.Open(rtfi.Path()); f == nil {
+				return
+			}
+		}
+	}
+	if f != nil {
 		defer f.Close()
-		if tmplsrc, err = LoadTempate(templates, compile, rtfi, fstat, fsopen, f); err == nil {
+		if al >= 0 {
+			a = append([]any{f}, a...)
+		}
+	}
+	if rtfi != nil {
+		if tmplsrc, err = LoadTempate(templates, cancache, compile, rtfi, fstat, fsopen, a...); err == nil {
+			if !cancache {
+				result, err = tmplsrc.Eval(evalcntnt, evalprgmormod)
+				tmplsrc.Close()
+				return
+			}
 			return tmplsrc.Eval(evalcntnt, evalprgmormod)
 		}
-		return
 	}
 	return
 }
 
-func LoadTempate[P any, M any](templates snkio.Map[string, Template[P, M]], compile CompileCodeFunc[P, M], rtfi snkfs.FileInfo, fstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, a ...any) (tmpltsrc Template[P, M], err error) {
+func LoadTempate[P any, M any](templates snkio.Map[string, Template[P, M]], storetemplate bool, compile CompileCodeFunc[P, M], rtfi snkfs.FileInfo, fstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, a ...any) (tmpltsrc Template[P, M], err error) {
 	var rscntnt, _ = snkio.WriterBuffer()
 	defer rscntnt.Close()
 	var unmatched = map[string]bool{}
@@ -186,14 +272,18 @@ func LoadTempate[P any, M any](templates snkio.Map[string, Template[P, M]], comp
 			var dependants = map[string]time.Time{}
 			if prgm, modrec, err = compile(cde, rtfi, dependants); err == nil {
 				tmpltsrc = &prgrmtmplt[P, M]{unmatched: unmatched, matched: matched, dependants: dependants, cntnt: cntnt, pgrm: prgm, modrec: modrec, FileInfo: snkfs.GenFileInfo(rtfi.Path(), rtfi.Base(), rtfi.Size(), rtfi.IsDir(), rtfi.ModTime())}
-				templates.Store(rtfi.Path(), tmpltsrc)
+				if storetemplate {
+					templates.Store(rtfi.Path(), tmpltsrc)
+				}
 				return
 			}
 			cntnt.Close()
 			return
 		}
 		tmpltsrc = &prgrmtmplt[P, M]{unmatched: unmatched, matched: matched, dependants: nil, cntnt: cntnt, pgrm: prgm, modrec: modrec, FileInfo: snkfs.GenFileInfo(rtfi.Path(), rtfi.Base(), rtfi.Size(), rtfi.IsDir(), rtfi.ModTime())}
-		templates.Store(rtfi.Path(), tmpltsrc)
+		if storetemplate {
+			templates.Store(rtfi.Path(), tmpltsrc)
+		}
 		return
 	}
 	cntnt.Close()
