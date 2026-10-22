@@ -3,11 +3,11 @@ module github.com/lnksnk/snk
 go 1.27.1
 
 require (
-	github.com/dlclark/regexp2/v2 v2.9.0
-	github.com/dop251/goja v0.0.0-20261014135309-2cb8274eed06
+	github.com/dlclark/regexp2/v2 v2.9.1
+	github.com/dop251/goja v0.0.0-20261020172427-7b1a02208696
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible
 	github.com/go-sql-driver/mysql v1.10.1
-	github.com/grafana/sobek v0.0.0-20261014141730-681dacdd9a92
+	github.com/grafana/sobek v0.0.0-20261020081906-048a54a9653b
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/medama-io/go-useragent v1.2.5
 	github.com/microsoft/go-mssqldb v1.11.2
@@ -24,12 +24,14 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.10.1 // indirect
 	github.com/boyter/go-string v1.0.5 // indirect
+	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
-	github.com/google/pprof v0.0.0-20261014150452-c3b4e57cab2c // indirect
+	github.com/google/pprof v0.0.0-20261016150608-1facf8f91b50 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/ianlancetaylor/demangle v0.0.0-20250417193237-f615e6bd150b // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.3 // indirect
@@ -38,12 +40,12 @@ require (
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/shopspring/decimal v1.5.0 // indirect
+	github.com/shopspring/decimal v1.6.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	modernc.org/libc v1.78.0 // indirect
+	modernc.org/libc v1.79.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
