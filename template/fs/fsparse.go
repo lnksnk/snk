@@ -2,6 +2,7 @@ package fs
 
 import (
 	"io"
+	"maps"
 	"path/filepath"
 	"strings"
 	"time"
@@ -67,9 +68,7 @@ func FParseFS(topout io.Writer, unmatched map[string]bool, matched map[string]ti
 					if topargs == nil {
 						topargs = map[string]any{}
 					}
-					for k, v := range argsd {
-						topargs[k] = v
-					}
+					maps.Copy(topargs, argsd)
 				}
 				a = append(a[:ai], a[ai+1:]...)
 				al--
@@ -126,6 +125,11 @@ func FParseFS(topout io.Writer, unmatched map[string]bool, matched map[string]ti
 	topargs["ep-path"] = topfi.Path()
 	topargs["ep-root"] = topfi.Root()
 	topargs["ep-base"] = topfi.Base()
+	var epth = topfi.Path()
+	if eext := filepath.Ext(epth); eext != "" {
+		epth = epth[:len(epth)-len(eext)]
+	}
+	topargs["e-path"] = strings.ReplaceAll(epth, "/", ":")
 	topargs["e-root"] = strings.ReplaceAll(topfi.Root(), "/", ":")
 	topargs["e-base"] = strings.ReplaceAll(topfi.Base(), "/", ":")
 	var matchedinline map[string]bool
@@ -375,67 +379,90 @@ type argsReaders struct {
 	template.RuneReaders
 }
 
+func isName(is []rune) string {
+	if isats(is) {
+		return string(is[1 : len(is)-1])
+	}
+	return string(is)
+}
+
+func isats(is []rune) bool {
+	return len(is) > 3 && is[0] == '@' && is[len(is)-1] == '@'
+}
+
 func (ar *argsReaders) ReadRune() (r rune, size int, err error) {
 retryrd:
 	if rdrs := ar.RuneReaders; rdrs != nil {
-		if r, size, err = rdrs.ReadRune(); err == nil && r == ar.prerns[ar.prei] {
-			ar.tmprns = append(ar.tmprns, r)
-			if ar.prei++; ar.prei == len(ar.prerns) {
-				var ininme []rune
-			nxtnme:
-				if r, size, err = rdrs.ReadRune(); err == nil && template.IsName(r) {
-					ar.tmprns = append(ar.tmprns, r)
-					ininme = append(ininme, r)
-					goto nxtnme
-				}
-			nxtpst:
-				if err == nil {
-					if ar.postrns[ar.posti] == r {
+		if r, size, err = rdrs.ReadRune(); err == nil {
+			if r == ar.prerns[ar.prei] {
+				ar.tmprns = append(ar.tmprns, r)
+				if ar.prei++; ar.prei == len(ar.prerns) {
+					var ininme []rune
+				nxtnme:
+					if r, size, err = rdrs.ReadRune(); err == nil {
 						ar.tmprns = append(ar.tmprns, r)
-						if ar.posti++; ar.posti == len(ar.postrns) {
-							if av, ok := ar.args[string(ininme)]; ok {
-								rdrs.Print(av)
-								ar.tmprns = nil
+						if r == '@' || template.IsName(r) {
+							ininme = append(ininme, r)
+							goto nxtnme
+						}
+					}
+				nxtpst:
+					if err == nil {
+						if ar.postrns[ar.posti] == r {
+							ar.tmprns = append(ar.tmprns, r)
+							if ar.posti++; ar.posti == len(ar.postrns) {
+								if av, ok := ar.args[isName(ininme)]; ok {
+									rdrs.Print(av)
+									ar.tmprns = nil
+									ar.prei = 0
+									ar.posti = 0
+									goto retryrd
+								}
 								ar.prei = 0
 								ar.posti = 0
+								ar.tmprns = nil
+								if isats(ininme) {
+									r = ar.prerns[0]
+									size = utf8.RuneLen(r)
+									ar.tmprns = append(ar.tmprns, ar.prerns[1:]...)
+									ar.tmprns = append(ar.tmprns, []rune(isName(ininme))...)
+									ar.tmprns = append(ar.tmprns, ar.postrns...)
+									rdrs.Print(ar.tmprns)
+									ar.tmprns = nil
+									return
+								}
 								goto retryrd
 							}
-							ar.prei = 0
-							ar.posti = 0
-							ar.tmprns = nil
-							goto retryrd
+							if r, size, err = rdrs.ReadRune(); err != nil {
+								ar.tmprns = append(ar.tmprns, r)
+								return
+							}
+							goto nxtpst
 						}
-						if r, size, err = rdrs.ReadRune(); err != nil {
-							ar.tmprns = append(ar.tmprns, r)
-							return
-						}
-						goto nxtpst
+						ar.tmprns = append(ar.tmprns, r)
+						r = ar.tmprns[0]
+						ar.tmprns = ar.tmprns[1:]
+						ar.prei = 0
+						ar.posti = 0
+						rdrs.Print(ar.tmprns)
+						ar.tmprns = nil
+						goto retryrd
 					}
-					ar.tmprns = append(ar.tmprns, r)
-					r = ar.tmprns[0]
-					ar.tmprns = ar.tmprns[1:]
-					ar.prei = 0
-					ar.posti = 0
-					rdrs.Print(ar.tmprns)
-					ar.tmprns = nil
-					goto retryrd
+					return
 				}
-				return
+				goto retryrd
 			}
-			goto retryrd
 		}
 		if len(ar.tmprns) == 0 {
 			return
 		}
-		if err == nil {
-			ar.prei = 0
-			ar.tmprns = append(ar.tmprns, r)
-			r = ar.tmprns[0]
-			ar.tmprns = ar.tmprns[1:]
-			rdrs.Print(ar.tmprns)
-			ar.tmprns = nil
-			size = utf8.RuneLen(r)
-		}
+		ar.prei = 0
+		ar.tmprns = append(ar.tmprns, r)
+		r = ar.tmprns[0]
+		ar.tmprns = ar.tmprns[1:]
+		rdrs.Print(ar.tmprns)
+		ar.tmprns = nil
+		size = utf8.RuneLen(r)
 		return
 	}
 	return
