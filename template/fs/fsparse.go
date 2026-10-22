@@ -439,7 +439,6 @@ retryrd:
 							}
 							goto nxtpst
 						}
-						ar.tmprns = append(ar.tmprns, r)
 						r = ar.tmprns[0]
 						ar.tmprns = ar.tmprns[1:]
 						ar.prei = 0
