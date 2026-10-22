@@ -64,14 +64,23 @@ func ESHandler(fss snkfs.FileSystem) fst.FSTHandler[*es.Runtime, *es.Program, es
 			}
 			return
 		})
-		f.FSTExecProgram = fst.FSTExecProgramFunc[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object](func(vm *es.Runtime, pgrm *es.Program, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (err error) {
+		f.FSTExecProgram = fst.FSTExecProgramFunc[*es.Runtime, *es.Program, es.CyclicModuleRecord, *es.Object](func(vm *es.Runtime, pgrm *es.Program, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (result any, err error) {
 			if vm != nil && pgrm != nil {
 				if canrequire {
 					vm.Set("require", func(specifier string) (o *es.Object, err error) {
 						return fst.Require(f.ProgramModules(), vm, f.CompileProgram, f.ExecModule, specifier, rootfi, fsstat, fsopen)
 					})
 				}
-				_, err = vm.RunProgram(pgrm)
+				var resulta es.Value
+				if resulta, err = vm.RunProgram(pgrm); err != nil {
+					return
+				}
+				if resulta == nil || es.IsUndefined(resulta) || es.IsNull(resulta) {
+					result = nil
+					return
+				}
+				result = resulta.Export()
+				return
 			}
 			return
 		})

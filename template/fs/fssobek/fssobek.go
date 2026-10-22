@@ -65,14 +65,23 @@ func SobekHandler(fss snkfs.FileSystem) fst.FSTHandler[*sobek.Runtime, *sobek.Pr
 			}
 			return
 		})
-		f.FSTExecProgram = fst.FSTExecProgramFunc[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object](func(vm *sobek.Runtime, pgrm *sobek.Program, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (err error) {
+		f.FSTExecProgram = fst.FSTExecProgramFunc[*sobek.Runtime, *sobek.Program, sobek.CyclicModuleRecord, *sobek.Object](func(vm *sobek.Runtime, pgrm *sobek.Program, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, canrequire bool) (result any, err error) {
 			if vm != nil && pgrm != nil {
 				if canrequire {
 					vm.Set("require", func(specifier string) (o *sobek.Object, err error) {
 						return fst.Require(f.ProgramModules(), vm, f.CompileProgram, f.ExecModule, specifier, rootfi, fsstat, fsopen)
 					})
 				}
-				_, err = vm.RunProgram(pgrm)
+				var resulta sobek.Value
+				if resulta, err = vm.RunProgram(pgrm); err != nil {
+					return
+				}
+				if resulta == nil || sobek.IsUndefined(resulta) || sobek.IsNull(resulta) {
+					result = nil
+					return
+				}
+				result = resulta.Export()
+				return
 			}
 			return
 		})
