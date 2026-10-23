@@ -398,12 +398,42 @@ retryrd:
 				ar.tmprns = append(ar.tmprns, r)
 				if ar.prei++; ar.prei == len(ar.prerns) {
 					var ininme []rune
+					var ln = -1
 				nxtnme:
 					if r, size, err = rdrs.ReadRune(); err == nil {
-						ar.tmprns = append(ar.tmprns, r)
-						if r == '@' || template.IsName(r) {
+						ln++
+						if ln > 0 {
+							if template.IsName(r) {
+								if ln > 1 && template.IsName(ininme[ln-1]) {
+									ar.tmprns = append(ar.tmprns, r)
+									ininme = append(ininme, r)
+									goto nxtnme
+								}
+								ar.tmprns = append(ar.tmprns, r)
+								ininme = append(ininme, r)
+								goto nxtnme
+							}
+							if r == '@' {
+								if ln > 1 && ininme[0] == r && template.IsName(ininme[ln-1]) {
+									ar.tmprns = append(ar.tmprns, r)
+									ininme = append(ininme, r)
+									goto nxtnme
+								}
+							}
+							if r != ar.postrns[ar.posti] {
+								ininme = nil
+								goto flshnxt
+							}
+							goto nxtpst
+						}
+						if ln == 0 && r == '@' || template.IsName(r) {
+							ar.tmprns = append(ar.tmprns, r)
 							ininme = append(ininme, r)
 							goto nxtnme
+						}
+						if r != ar.postrns[ar.posti] {
+							ininme = nil
+							goto flshnxt
 						}
 					}
 				nxtpst:
@@ -455,6 +485,7 @@ retryrd:
 		if len(ar.tmprns) == 0 {
 			return
 		}
+	flshnxt:
 		ar.prei = 0
 		ar.tmprns = append(ar.tmprns, r)
 		r = ar.tmprns[0]
