@@ -3,18 +3,18 @@ module github.com/lnksnk/snk
 go 1.27.1
 
 require (
-	github.com/dlclark/regexp2/v2 v2.9.1
-	github.com/dop251/goja v0.0.0-20261020172427-7b1a02208696
+	github.com/dlclark/regexp2/v2 v2.11.0
+	github.com/dop251/goja v0.0.0-20261026132650-6b6a90e51946
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible
 	github.com/go-sql-driver/mysql v1.10.1
-	github.com/grafana/sobek v0.0.0-20261020081906-048a54a9653b
+	github.com/grafana/sobek v0.0.0-20261021132036-87a47258b7dc
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/medama-io/go-useragent v1.2.5
 	github.com/microsoft/go-mssqldb v1.11.2
 	github.com/pkg/errors v0.9.1
 	github.com/sijms/go-ora/v3 v3.0.1
 	golang.org/x/text v0.43.0
-	modernc.org/sqlite v1.60.1
+	modernc.org/sqlite v1.61.0
 )
 
 require (
@@ -29,9 +29,9 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
-	github.com/google/pprof v0.0.0-20261016150608-1facf8f91b50 // indirect
+	github.com/google/pprof v0.0.0-20261026192309-dbd0ed30aa88 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/ianlancetaylor/demangle v0.0.0-20250417193237-f615e6bd150b // indirect
+	github.com/ianlancetaylor/demangle v0.0.0-20261012173340-cbb8aaea4290 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.3 // indirect
@@ -45,7 +45,7 @@ require (
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
-	modernc.org/libc v1.79.0 // indirect
+	modernc.org/libc v1.79.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
