@@ -45,7 +45,7 @@ var sbkh = fses.ESHandler(fsys)
 
 func ESVmSetupRequestContext(ctx context.Context, sql snksql.SQLHandler, fs fs.FileSystem, vmr fst.RApi[*es.Runtime], params parameters.Parameters, ua useragent.UserAgent) {
 	vmr.Set("escape", map[string]any{"url": map[string]any{"path": url.PathEscape, "query": url.QueryEscape}, "html": html.EscapeString})
-	vmr.Set("unescape", map[string]any{"url": map[string]any{"path": url.PathUnescape, "query": url.QueryUnescape}, "html": html.EscapeString})
+	vmr.Set("unescape", map[string]any{"url": map[string]any{"path": url.PathUnescape, "query": url.QueryUnescape}, "html": html.UnescapeString})
 	vmr.Set("DB", sql)
 	vmr.Set("FS", fs)
 	vmr.Set("UA", ua)
