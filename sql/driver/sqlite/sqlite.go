@@ -16,7 +16,7 @@ var SQLiteDriver = snksqldrv.NewDriver(snksqldrv.DriverContextFunc(func(datasour
 	if datasource == "" || datasource == ":memory:" {
 		datasource = "file::memory:?mode=memory"
 	}
-	return snksqldrv.GoConnector(datasource, sqltdvr), nil
+	return sqlite.NewConnector(datasource) //snksqldrv.GoConnector(datasource, sqltdvr), nil
 }), sqltdvr, snksqldrv.DriverParseSqlFunc(func(name string, idx int) (string, string) {
 	if name == "" {
 		name = strconv.Itoa(idx + 1)
