@@ -15,6 +15,8 @@ import (
 
 var UTF8exts = map[string]bool{}
 
+var MARKUPExts = map[string]bool{}
+
 func init() {
 	utf8WebExtensions := []string{
 		".html", ".htm", // Web pages
@@ -32,6 +34,22 @@ func init() {
 	}
 	for ui := range utf8WebExtensions {
 		UTF8exts[utf8WebExtensions[ui]] = true
+	}
+	markupExtensions := []string{
+		// Hypertext and Web Markup
+		"html", "htm", "xhtml", "xml", "svg",
+
+		// Lightweight Markdown
+		"md", "markdown", "mkd", "mdwn", "mdown", "mdtxt", "mdtext",
+
+		// Document and Scientific Markup
+		"tex", "latex", "adoc", "asciidoc", "rst", "typ",
+
+		// Office and Open Document Markup
+		"docx", "pptx", "xlsx", "odt", "ods", "odp",
+	}
+	for mi := range markupExtensions {
+		MARKUPExts[markupExtensions[mi]] = true
 	}
 }
 
