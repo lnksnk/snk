@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"fmt"
 	"io"
 	"maps"
 	"path/filepath"
@@ -43,6 +44,8 @@ func (nxte *nextelem) Close() (err error) {
 	}
 	return
 }
+
+var ignrargnames = map[string]bool{"ep-path": true, "ep-base": true, "ep-root": true, "e-path": true, "e-root": true, "e-base": true, "cntnt": true, "args-inline": true}
 
 func FParseFS(topout io.Writer, unmatched map[string]bool, matched map[string]time.Time, topfi fs.FileInfo, fsstat fs.StatFileSystem, a ...any) (fserr error) {
 	var rr template.RuneReaders
@@ -132,6 +135,14 @@ func FParseFS(topout io.Writer, unmatched map[string]bool, matched map[string]ti
 	topargs["e-path"] = strings.ReplaceAll(epth, "/", ":")
 	topargs["e-root"] = strings.ReplaceAll(topfi.Root(), "/", ":")
 	topargs["e-base"] = strings.ReplaceAll(topfi.Base(), "/", ":")
+	topargs["args-inline"] = func() (mrks string) {
+		for tk, tv := range topargs {
+			if !ignrargnames[tk] {
+				mrks += fmt.Sprintf(" %s=\"%s\"", tk, tv)
+			}
+		}
+		return
+	}()
 	var matchedinline map[string]bool
 	if len(topargs) > 0 {
 		rr = &argsReaders{args: topargs, RuneReaders: rr, prerns: []rune(argsprefix), postrns: []rune(argpostfix)}
