@@ -59,6 +59,7 @@ func FParseFS(topout io.Writer, unmatched map[string]bool, matched map[string]ti
 	var elmstrds []string
 	var orgout = topout
 	var prevename string
+	var tpbf snkio.BufferWriter
 	ai := 0
 	if al := len(a); al > 0 {
 		if rr, _ = a[0].(template.RuneReaders); rr != nil {
@@ -135,24 +136,73 @@ func FParseFS(topout io.Writer, unmatched map[string]bool, matched map[string]ti
 	topargs["e-path"] = strings.ReplaceAll(epth, "/", ":")
 	topargs["e-root"] = strings.ReplaceAll(topfi.Root(), "/", ":")
 	topargs["e-base"] = strings.ReplaceAll(topfi.Base(), "/", ":")
-	topargs["args-inline"] = func() (mrks string) {
-		for tk, tv := range topargs {
-			if !ignrargnames[tk] {
-				mrks += fmt.Sprintf(" %s=\"%s\"", tk, tv)
+
+	var inlnargs map[string]any
+	for tk, tv := range topargs {
+		if !ignrargnames[tk] {
+			if inlnargs == nil {
+				inlnargs = map[string]any{tk: tv}
+				continue
 			}
+			inlnargs[tk] = tv
 		}
-		return
-	}()
+	}
 	var matchedinline map[string]bool
 	if len(topargs) > 0 {
 		rr = &argsReaders{args: topargs, RuneReaders: rr, prerns: []rune(argsprefix), postrns: []rune(argpostfix)}
 	}
 	if fserr = template.ParseMarkup(rr, func(cntnt snkio.BufferWriter) (cnterr error) {
-		cntnt.WriteTo(topout)
+		if tpbf != nil && !tpbf.Empty() {
+			defer tpbf.Reset()
+			_, cnterr = tpbf.WriteTo(topout)
+			return
+		}
+		_, cnterr = cntnt.WriteTo(topout)
 		return
 	}, func(flushcontent func() error, elmtype template.ElemType, ename string, eargs map[string][]rune) (elmerr error) {
 		var elemname, elempath, elemext = elempth(topfi, ename, elmtype, eargs, topargs, elmnxts)
 		if elempath == topfi.Path() {
+			if elmtype == template.ElemStart || elmtype == template.ElemSingle {
+				if topout != nil {
+					if tpbf != nil {
+						tpbf.Reset()
+					}
+					if tpbf == nil {
+						tpbf, _ = snkio.WriterBuffer()
+					}
+					snkio.Fprint(tpbf, "<", ename)
+					var prpdargs = map[string]any{}
+					for ek, ev := range eargs {
+						if iv, ik := inlnargs[ek]; ik {
+							var evs = fmt.Sprintf("%s", string(ev))
+							if strings.Contains(evs, "[#"+ek+"#]") {
+								evs = strings.ReplaceAll(evs, "[#"+ek+"#]", fmt.Sprintf("%s", iv))
+								prpdargs[ek] = evs
+								continue
+							}
+							prpdargs[ek] = fmt.Sprintf("%s%s", string(ev), iv)
+							continue
+						}
+						prpdargs[ek] = ev
+					}
+					for ik, iv := range inlnargs {
+						if _, pk := prpdargs[ik]; !pk {
+							prpdargs[ik] = iv
+						}
+					}
+					for pk, pv := range prpdargs {
+						snkio.Fprint(tpbf, " ", pk, `="`, pv, `"`)
+					}
+					clear(prpdargs)
+					if elmtype == template.ElemSingle {
+						snkio.Fprint(tpbf, "/", ">")
+						return flushcontent()
+					}
+					snkio.Fprint(tpbf, ">")
+					return flushcontent()
+				}
+				return flushcontent()
+			}
 			return flushcontent()
 		}
 		if elmtype == template.ElemEnd {
