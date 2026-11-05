@@ -3,6 +3,7 @@ package serve
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -205,6 +206,10 @@ type HttpServer struct {
 
 func (hs *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var path = r.URL.Path
+
+	if unescapedPath, err := url.PathUnescape(path); err == nil {
+		path = unescapedPath
+	}
 	var mimeinfo = mime.ExtMimeInfo(path)
 	if srvws, srvsse, utf8exts, UTF8Exts := hs.ServerWS, hs.ServeSSE, hs.utf8exts, hs.UTF8Exts; srvsse != nil && srvws != nil {
 
@@ -278,7 +283,7 @@ func serveWsSse(path string, ua useragent.UserAgent, srvws ServerWS, srvsse Serv
 	}); served {
 		return
 	}
-	served, err = serversent.UpgradeAndServe(w, r, func(w http.ResponseWriter, r *http.Request) error {
+	served, err = serversent.UpgradeAndServeContext(r.Context(), w, r, func(w http.ResponseWriter, r *http.Request, ssn serversent.Session) error {
 		var params = parameters.NewParameters()
 		defer params.ClearAll()
 		parameters.LoadParametersFromUrlValues(params, r.URL.Query())
