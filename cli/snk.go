@@ -206,7 +206,7 @@ func main() {
 			}), params), fsys, vmr, params, ua)
 		})
 		return
-	}), fsserve.UTF8Ext(".html"), fsserve.UTF8Ext(".js"), fsserve.UTF8Ext(".css"), fsserve.UTF8Ext(".json"))
+	}), fsserve.UTF8Ext(".html"), fsserve.UTF8Ext(".js"), fsserve.UTF8Ext(".css"), fsserve.UTF8Ext(".json"), fsserve.UTF8Ext(".m3u"))
 	for _, ln := range lstnrs {
 		go http.Serve(ln, hndlr)
 	}
