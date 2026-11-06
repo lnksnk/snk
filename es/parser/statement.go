@@ -147,8 +147,8 @@ func (self *_parser) parseStatement() ast.Statement {
 		colon := self.idx
 		self.next() // :
 		label := identifier.Name
-		for li := range self.scope.labels {
-			if label == self.scope.labels[li] {
+		for _, value := range self.scope.labels {
+			if label == value {
 				self.error(identifier.Idx0(), "Label '%s' already exists", label)
 			}
 		}
@@ -834,8 +834,7 @@ func (self *_parser) parseForOrForInStatement() ast.Statement {
 }
 
 func (self *_parser) ensurePatternInit(list []*ast.Binding) {
-	for i := range list {
-		item := list[i]
+	for _, item := range list {
 		if _, ok := item.Target.(ast.Pattern); ok {
 			if item.Initializer == nil {
 				self.error(item.Idx1(), "Missing initializer in destructuring declaration")
