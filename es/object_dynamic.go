@@ -17,7 +17,8 @@ a dynamic object is by using the Runtime.NewDynamicObject() method. This is done
 silent code breaks when this interface changes.
 */
 type DynamicObject interface {
-	// Get a property value for the key. May return nil if the property does not exist.
+	// Get a property value for the key. Must return nil if the property does not exist.
+	// Note that this handler is also used for the GetBinding flow instead of 2 separate calls to Has and Get.
 	Get(key string) Value
 	// Set a property value for the key. Return true if success, false otherwise.
 	Set(key string, val Value) bool
@@ -50,6 +51,9 @@ type DynamicArray interface {
 	// Len returns the current array length.
 	Len() int
 	// Get an item at index idx. Note that idx may be any integer, negative or beyond the current length.
+	// The handler should return nil in such cases as the property is considering as not existing.
+	// The GetBinding flow which fuses HasProperty and Get treats such properties as missing and walks the
+	// prototype chain instead of calling Get.
 	Get(idx int) Value
 	// Set an item at index idx. Note that idx may be any integer, negative or beyond the current length.
 	// The expected behaviour when it's beyond length is that the array's length is increased to accommodate
@@ -333,6 +337,17 @@ func (o *baseDynamicObject) setForeignSym(p *Symbol, v, receiver Value, throw bo
 	return false, false
 }
 
+// Use Get as the fused hasAndGet. Treat nil result as an indication that the property does not exist
+func (o *dynamicObject) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	if v := o.d.Get(name.String()); v != nil {
+		return v, true
+	}
+	if o.prototype != nil {
+		return o.prototype.self.hasAndGetStr(name, receiver)
+	}
+	return nil, false
+}
+
 func (o *dynamicObject) hasPropertyStr(u unistring.String) bool {
 	if o.hasOwnPropertyStr(u) {
 		return true
@@ -530,8 +545,8 @@ func (o *dynamicObject) stringKeys(all bool, accum []Value) []Value {
 		accum = make([]Value, len(accum), l)
 		copy(accum, oldAccum)
 	}
-	for ki := range keys {
-		accum = append(accum, newStringValue(keys[ki]))
+	for _, key := range keys {
+		accum = append(accum, newStringValue(key))
 	}
 	return accum
 }
@@ -651,6 +666,24 @@ func (a *dynamicArray) setForeignIdx(p valueInt, v, receiver Value, throw bool) 
 	return a.setParentForeignIdx(p, v, receiver, throw)
 }
 
+func (a *dynamicArray) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	if name == "length" {
+		return intToValue(int64(a.a.Len())), true
+	}
+
+	if idx, ok := strToInt(name); ok {
+		if a._has(idx) {
+			return a.a.Get(idx), true
+		}
+	}
+
+	if a.prototype != nil {
+		return a.prototype.self.hasAndGetStr(name, receiver)
+	}
+
+	return nil, false
+}
+
 func (a *dynamicArray) hasPropertyStr(u unistring.String) bool {
 	if a.hasOwnPropertyStr(u) {
 		return true
@@ -689,7 +722,25 @@ func (a *dynamicArray) hasOwnPropertyIdx(v valueInt) bool {
 	return a._has(toIntStrict(int64(v)))
 }
 
+func (a *dynamicArray) _defineLength(desc PropertyDescriptor, throw bool) bool {
+	if desc.Configurable == FLAG_TRUE || desc.Enumerable == FLAG_TRUE || desc.Getter != nil || desc.Setter != nil {
+		typeErrorResult(throw, "Cannot redefine property: length")
+		return false
+	}
+	if desc.Writable == FLAG_FALSE {
+		typeErrorResult(throw, "Dynamic array 'length' cannot be made read-only")
+		return false
+	}
+	if desc.Value != nil {
+		return a._setLen(desc.Value, throw)
+	}
+	return true
+}
+
 func (a *dynamicArray) defineOwnPropertyStr(name unistring.String, desc PropertyDescriptor, throw bool) bool {
+	if name == "length" {
+		return a._defineLength(desc, throw)
+	}
 	if a.checkDynamicObjectPropertyDescr(name, desc, throw) {
 		if idx, ok := strToInt(name); ok {
 			return a._setIdx(idx, desc.Value, throw)
@@ -780,7 +831,7 @@ func (a *dynamicArray) stringKeys(all bool, accum []Value) []Value {
 		accum = make([]Value, len(oldAccum), l)
 		copy(accum, oldAccum)
 	}
-	for i := range al {
+	for i := 0; i < al; i++ {
 		accum = append(accum, asciiString(strconv.Itoa(i)))
 	}
 	if all {

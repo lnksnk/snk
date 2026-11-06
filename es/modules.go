@@ -335,19 +335,19 @@ func (r *Runtime) asyncModuleExecutionFulfilled(state *evaluationState, c Cyclic
 	sort.Slice(execList, func(i, j int) bool {
 		return state.asyncEvaluation[execList[i]] < state.asyncEvaluation[execList[j]]
 	})
-	for mi := range execList {
-		if state.status[execList[mi]] == Evaluated {
+	for _, m := range execList {
+		if state.status[m] == Evaluated {
 			continue
 		}
-		if execList[mi].HasTLA() {
-			r.executeAsyncModule(state, execList[mi])
+		if m.HasTLA() {
+			r.executeAsyncModule(state, m)
 		} else {
-			result, err := execList[mi].ExecuteModule(r, nil, nil)
+			result, err := m.ExecuteModule(r, nil, nil)
 			if err != nil {
-				r.asyncModuleExecutionRejected(state, execList[mi], err)
+				r.asyncModuleExecutionRejected(state, m, err)
 				continue
 			}
-			state.status[execList[mi]] = Evaluated
+			state.status[m] = Evaluated
 			if cap := state.topLevelCapability[r.findModuleRecord(result).(CyclicModuleRecord)]; cap != nil {
 				// TODO having the module instances going through Values and back is likely not a *great* idea
 				cap.resolve(_undefined)
@@ -432,8 +432,8 @@ func (r *Runtime) getImportMetaFor(m ModuleRecord) *Object {
 		properties = r.getImportMetaProperties(m)
 	}
 
-	for pi := range properties {
-		o.Set(properties[pi].Key, properties[pi].Value)
+	for _, property := range properties {
+		o.Set(property.Key, property.Value)
 	}
 
 	if r.finalizeImportMeta != nil {

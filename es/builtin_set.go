@@ -61,7 +61,7 @@ func (so *setObject) export(ctx *objectExportCtx) interface{} {
 	a := make([]interface{}, so.m.size)
 	ctx.put(so.val, a)
 	iter := so.m.newIter()
-	for i := range a {
+	for i := 0; i < len(a); i++ {
 		entry := iter.next()
 		if entry == nil {
 			break
@@ -83,7 +83,7 @@ func (so *setObject) exportToArrayOrSlice(dst reflect.Value, typ reflect.Type, c
 	ctx.putTyped(so.val, typ, dst.Interface())
 	iter := so.m.newIter()
 	r := so.val.runtime
-	for i := range l {
+	for i := 0; i < l; i++ {
 		entry := iter.next()
 		if entry == nil {
 			break
@@ -424,8 +424,8 @@ func (r *Runtime) builtin_newSet(args []Value, newTarget *Object) *Object {
 			if adder == r.global.setAdder {
 				ir := r.getIterator(arg, nil)
 				if stdArr != nil && ir.nextRes != nil {
-					for vi := range stdArr.values {
-						so.m.set(stdArr.values[vi], nil)
+					for _, v := range stdArr.values {
+						so.m.set(v, nil)
 					}
 				} else {
 					ir.iterate(func(item Value) {
@@ -439,8 +439,8 @@ func (r *Runtime) builtin_newSet(args []Value, newTarget *Object) *Object {
 				}
 				ir := r.getIterator(arg, nil)
 				if stdArr != nil && ir.nextRes != nil {
-					for im := range stdArr.values {
-						adderFn(FunctionCall{This: o, Arguments: []Value{stdArr.values[im]}})
+					for _, item := range stdArr.values {
+						adderFn(FunctionCall{This: o, Arguments: []Value{item}})
 					}
 				} else {
 					ir.iterate(func(item Value) {

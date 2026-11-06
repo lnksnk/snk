@@ -199,6 +199,12 @@ func (a *arrayObject) swap(i int, j int) {
 	a.values[i], a.values[j] = a.values[j], a.values[i]
 }
 
+// 'length' is recomputed by getOwnPropStr (getLengthProp), so it must be consulted rather than
+// reading the shared (possibly stale) lengthProp directly from the values map.
+func (a *arrayObject) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	return a.hasAndGetOwnStr(name, a.getOwnPropStr(name), receiver)
+}
+
 func (a *arrayObject) getStr(name unistring.String, receiver Value) Value {
 	return a.getStrWithOwnProp(a.getOwnPropStr(name), name, receiver)
 }
@@ -308,11 +314,11 @@ func (a *arrayObject) iterateStringKeys() iterNextFunc {
 }
 
 func (a *arrayObject) stringKeys(all bool, accum []Value) []Value {
-	for i := range a.values {
+	for i, prop := range a.values {
 		name := strconv.Itoa(i)
-		if a.values[i] != nil {
+		if prop != nil {
 			if !all {
-				if prop, ok := a.values[i].(*valueProperty); ok && !prop.enumerable {
+				if prop, ok := prop.(*valueProperty); ok && !prop.enumerable {
 					continue
 				}
 			}
@@ -504,13 +510,13 @@ func (a *arrayObject) export(ctx *objectExportCtx) interface{} {
 	arr := make([]interface{}, a.length)
 	ctx.put(a.val, arr)
 	if a.propValueCount == 0 && a.length == uint32(len(a.values)) && uint32(a.objCount) == a.length {
-		for i := range a.values {
-			if a.values[i] != nil {
-				arr[i] = exportValue(a.values[i], ctx)
+		for i, v := range a.values {
+			if v != nil {
+				arr[i] = exportValue(v, ctx)
 			}
 		}
 	} else {
-		for i := range a.length {
+		for i := uint32(0); i < a.length; i++ {
 			v := a.getIdx(valueInt(i), nil)
 			if v != nil {
 				arr[i] = exportValue(v, ctx)
@@ -561,8 +567,8 @@ func (a *arrayObject) exportToArrayOrSlice(dst reflect.Value, typ reflect.Type, 
 
 func (a *arrayObject) setValuesFromSparse(items []sparseArrayItem, newMaxIdx int) {
 	a.values = make([]Value, newMaxIdx+1)
-	for i := range items {
-		a.values[items[i].idx] = items[i].value
+	for _, item := range items {
+		a.values[item.idx] = item.value
 	}
 	a.objCount = len(items)
 }

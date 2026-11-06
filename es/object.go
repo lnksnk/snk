@@ -165,6 +165,14 @@ type objectImpl interface {
 	getOwnPropIdx(valueInt) Value
 	getOwnPropSym(*Symbol) Value
 
+	// hasAndGetStr combines HasProperty and Get for a string property. It returns (value, true)
+	// if the property exists and (nil, false) otherwise, the same as
+	//   hasPropertyStr(name) && getStr(name, receiver)
+	// but may fuse the two into a single lookup when doing so cannot cause observable effects.
+	// The receiver has the same meaning as in getStr: if nil, the property accessor (if any) is
+	// called with the object where the property is found.
+	hasAndGetStr(name unistring.String, receiver Value) (Value, bool)
+
 	setOwnStr(p unistring.String, v Value, throw bool) bool
 	setOwnIdx(p valueInt, v Value, throw bool) bool
 	setOwnSym(p *Symbol, v Value, throw bool) bool
@@ -371,6 +379,61 @@ func (o *baseObject) getStr(name unistring.String, receiver Value) Value {
 	return prop
 }
 
+func (o *baseObject) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	prop := o.values[name]
+	if prop != nil {
+		if vp, ok := prop.(*valueProperty); ok {
+			if vp.getterFunc == nil {
+				// own data property: reading it is not observable and implies HasProperty.
+				return nilSafe(vp.value), true
+			}
+			// accessor: Get may run user code, with the same receiver semantics as getStr
+			if receiver == nil {
+				receiver = o.val
+			}
+			return vp.get(receiver), true
+		}
+		return prop, true
+	}
+	// own property is absent: walk the prototype chain, fusing has+get per level.
+	// The recursion must go through o.prototype.self so that overrides in embedding types
+	// (e.g. lazily materialising objects) are correctly dispatched. Note, the receiver is
+	// substituted at the first hop, mirroring getStr's prototype walk.
+	if o.prototype != nil {
+		if receiver == nil {
+			receiver = o.val
+		}
+		return o.prototype.self.hasAndGetStr(name, receiver)
+	}
+	return nil, false
+}
+
+// hasAndGetOwnStr implements the hasAndGetStr fast path for objects whose own property lookup must
+// go through their getOwnPropStr override (e.g. properties served from Go structures, recomputed
+// properties such as array 'length', or lazily materialised properties).
+// own must be the result of o.getOwnPropStr(name).
+func (o *baseObject) hasAndGetOwnStr(name unistring.String, own Value, receiver Value) (Value, bool) {
+	if own != nil {
+		if vp, ok := own.(*valueProperty); ok {
+			if vp.getterFunc == nil {
+				return nilSafe(vp.value), true
+			}
+			if receiver == nil {
+				receiver = o.val
+			}
+			return vp.get(receiver), true
+		}
+		return own, true
+	}
+	if o.prototype != nil {
+		if receiver == nil {
+			receiver = o.val
+		}
+		return o.prototype.self.hasAndGetStr(name, receiver)
+	}
+	return nil, false
+}
+
 func (o *baseObject) getOwnPropIdx(idx valueInt) Value {
 	return o.val.self.getOwnPropStr(idx.string())
 }
@@ -406,8 +469,8 @@ func (o *baseObject) checkDelete(name unistring.String, val Value, throw bool) b
 
 func (o *baseObject) _delete(name unistring.String) {
 	delete(o.values, name)
-	for i := range o.propNames {
-		if o.propNames[i] == name {
+	for i, n := range o.propNames {
+		if n == name {
 			names := o.propNames
 			if namesMarkedForCopy(names) {
 				newNames := make([]unistring.String, len(names)-1, shrinkCap(len(names), cap(names)))
@@ -987,9 +1050,9 @@ func (o *baseObject) export(ctx *objectExportCtx) interface{} {
 	keys := o.stringKeys(false, nil)
 	m := make(map[string]interface{}, len(keys))
 	ctx.put(o.val, m)
-	for itmk := range keys {
-		itemNameStr := keys[itmk].String()
-		v := o.val.self.getStr(keys[itmk].string(), nil)
+	for _, itemName := range keys {
+		itemNameStr := itemName.String()
+		v := o.val.self.getStr(itemName.string(), nil)
 		if v != nil {
 			m[itemNameStr] = exportValue(v, ctx)
 		} else {
@@ -1069,8 +1132,8 @@ func exportToArrayOrSliceWithIterator(ir *iteratorRecord, o *Object, dst reflect
 			dst.Set(reflect.MakeSlice(typ, len(values), len(values)))
 		}
 		ctx.putTyped(o, typ, dst.Interface())
-		for i := range values {
-			err = r.toReflectValue(values[i], dst.Index(i), ctx)
+		for i, val := range values {
+			err = r.toReflectValue(val, dst.Index(i), ctx)
 			if err != nil {
 				return
 			}
@@ -1093,7 +1156,7 @@ func exportToArrayOrSliceWithIterator(ir *iteratorRecord, o *Object, dst reflect
 			dst.Set(reflect.MakeSlice(typ, l, l))
 		}
 		ctx.putTyped(o, typ, dst.Interface())
-		for i := range l {
+		for i := 0; i < l; i++ {
 			val := nilSafe(o.self.getIdx(valueInt(i), nil))
 			err = r.toReflectValue(val, dst.Index(i), ctx)
 			if err != nil {
@@ -1385,16 +1448,16 @@ func (o *baseObject) fixPropOrder() {
 func (o *baseObject) stringKeys(all bool, keys []Value) []Value {
 	o.ensurePropOrder()
 	if all {
-		for ki := range o.propNames {
-			keys = append(keys, stringValueFromRaw(o.propNames[ki]))
+		for _, k := range o.propNames {
+			keys = append(keys, stringValueFromRaw(k))
 		}
 	} else {
-		for ki := range o.propNames {
-			prop := o.values[o.propNames[ki]]
+		for _, k := range o.propNames {
+			prop := o.values[k]
 			if prop, ok := prop.(*valueProperty); ok && !prop.enumerable {
 				continue
 			}
-			keys = append(keys, stringValueFromRaw(o.propNames[ki]))
+			keys = append(keys, stringValueFromRaw(k))
 		}
 	}
 	return keys
@@ -1662,8 +1725,8 @@ func (o *guardedObject) guard(props ...unistring.String) {
 	if o.guardedProps == nil {
 		o.guardedProps = make(map[unistring.String]struct{})
 	}
-	for pi := range props {
-		o.guardedProps[props[pi]] = struct{}{}
+	for _, p := range props {
+		o.guardedProps[p] = struct{}{}
 	}
 }
 

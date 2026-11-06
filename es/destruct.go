@@ -74,6 +74,11 @@ func (d *destructKeyedSource) getOwnPropStr(u unistring.String) Value {
 	return d.w().getOwnPropStr(u)
 }
 
+func (d *destructKeyedSource) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	d.recordKey(stringValueFromRaw(name))
+	return d.w().hasAndGetStr(name, receiver)
+}
+
 func (d *destructKeyedSource) getOwnPropIdx(v valueInt) Value {
 	d.recordKey(v.toString())
 	return d.w().getOwnPropIdx(v)
@@ -265,12 +270,12 @@ func (d *destructKeyedSource) stringKeys(all bool, accum []Value) []Value {
 
 func (d *destructKeyedSource) filterUsedKeys(keys []Value) []Value {
 	k := 0
-	for i := range keys {
-		if d.usedKeys.has(keys[i]) {
+	for i, key := range keys {
+		if d.usedKeys.has(key) {
 			continue
 		}
 		if k != i {
-			keys[k] = keys[i]
+			keys[k] = key
 		}
 		k++
 	}

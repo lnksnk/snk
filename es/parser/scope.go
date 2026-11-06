@@ -41,8 +41,8 @@ func (self *_scope) declare(declaration *ast.VariableDeclaration) {
 }
 
 func (self *_scope) hasLabel(name unistring.String) bool {
-	for li := range self.labels {
-		if self.labels[li] == name {
+	for _, label := range self.labels {
+		if label == name {
 			return true
 		}
 	}

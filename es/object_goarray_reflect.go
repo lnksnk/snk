@@ -46,9 +46,9 @@ func (c *valueArrayCache) put(idx int, w reflectValueWrapper) {
 func (c *valueArrayCache) shrink(newlen int) {
 	if len(*c) > newlen {
 		tail := (*c)[newlen:]
-		for i := range tail {
-			if tail[i] != nil {
-				copyReflectValueWrapper(tail[i])
+		for i, item := range tail {
+			if item != nil {
+				copyReflectValueWrapper(item)
 				tail[i] = nil
 			}
 		}
@@ -107,6 +107,21 @@ func (o *objectGoArrayReflect) getIdx(idx valueInt, receiver Value) Value {
 		return o._getIdx(idx)
 	}
 	return o.objectGoReflect.getStr(idx.string(), receiver)
+}
+
+func (o *objectGoArrayReflect) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	var ownProp Value
+	if idx := strToGoIdx(name); idx >= 0 && idx < o.fieldsValue.Len() {
+		ownProp = o._getIdx(idx)
+	} else if name == "length" {
+		if o.fieldsValue.Kind() == reflect.Slice {
+			o.updateLen()
+		}
+		ownProp = &o.lengthProp
+	} else {
+		ownProp = o.objectGoReflect.getOwnPropStr(name)
+	}
+	return o.hasAndGetOwnStr(name, ownProp, receiver)
 }
 
 func (o *objectGoArrayReflect) getStr(name unistring.String, receiver Value) Value {
@@ -306,7 +321,7 @@ func (i *goArrayReflectPropIter) next() (propIterItem, iterNextFunc) {
 }
 
 func (o *objectGoArrayReflect) stringKeys(all bool, accum []Value) []Value {
-	for i := range o.fieldsValue.Len() {
+	for i := 0; i < o.fieldsValue.Len(); i++ {
 		accum = append(accum, asciiString(strconv.Itoa(i)))
 	}
 

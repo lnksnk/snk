@@ -36,7 +36,7 @@ func match(s string, lower string) (string, bool) {
 	if len(s) < len(lower) {
 		return s, false
 	}
-	for i := range len(lower) {
+	for i := 0; i < len(lower); i++ {
 		c1 := s[i]
 		c2 := lower[i]
 		if c1 != c2 {
@@ -149,9 +149,9 @@ var tzAbbrs = []struct {
 }
 
 func getTimeZoneAbbr(s string) (int, string, bool) {
-	for ztai := range tzAbbrs {
-		if s, ok := match(s, tzAbbrs[ztai].nameLower); ok {
-			return tzAbbrs[ztai].offset, s, true
+	for _, tzAbbr := range tzAbbrs {
+		if s, ok := match(s, tzAbbr.nameLower); ok {
+			return tzAbbr.offset, s, true
 		}
 	}
 	return 0, s, false
@@ -173,8 +173,8 @@ var monthNamesLower = []string{
 }
 
 func getMonth(s string) (int, string, bool) {
-	for i := range monthNamesLower {
-		if s, ok := match(s, monthNamesLower[i]); ok {
+	for i, monthNameLower := range monthNamesLower {
+		if s, ok := match(s, monthNameLower); ok {
 			return i + 1, s, true
 		}
 	}
@@ -347,10 +347,9 @@ func parseDateOtherString(s string) (date, bool) {
 			level := 1
 			s = s[1:]
 			for len(s) > 0 && level != 0 {
-				switch s[0] {
-				case '(':
+				if s[0] == '(' {
 					level++
-				case ')':
+				} else if s[0] == ')' {
 					level--
 				}
 				s = s[1:]

@@ -18,9 +18,9 @@ func (e *errorObject) formatStack() String {
 	}
 	b.WriteRune('\n')
 
-	for fi := range e.stack {
+	for _, frame := range e.stack {
 		b.writeASCII("\tat ")
-		e.stack[fi].WriteToValueBuilder(&b)
+		frame.WriteToValueBuilder(&b)
 		b.WriteRune('\n')
 	}
 	return b.String()
@@ -38,6 +38,10 @@ func (e *errorObject) addStackProp() Value {
 		return res
 	}
 	return nil
+}
+
+func (e *errorObject) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	return e.hasAndGetOwnStr(name, e.getOwnPropStr(name), receiver)
 }
 
 func (e *errorObject) getStr(p unistring.String, receiver Value) Value {

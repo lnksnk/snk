@@ -2,9 +2,9 @@ package es
 
 import (
 	"fmt"
-	"maps"
 	"math"
 	"math/big"
+	"math/bits"
 	"reflect"
 	"runtime"
 	"strconv"
@@ -18,6 +18,9 @@ import (
 
 const (
 	maxInt = 1 << 53
+
+	// maxBigIntBits is the largest BigInt size in bits, as in node. Only bigIntShift checks it.
+	maxBigIntBits = 1 << 30
 
 	tryPanicMarker = -2
 )
@@ -265,19 +268,25 @@ type objStrRef struct {
 }
 
 func (r *objStrRef) get() Value {
-	if v := r.base.self.getStr(r.name, r.this); v != nil {
+	if r.binding {
+		// Global Environment Record GetBindingValue: HasProperty first, then Get, fused into a
+		// single lookup where unobservable. The property may be absent (e.g. a Proxy 'has' trap
+		// reporting false), in which case this is an unresolvable reference.
+		v, exists := r.base.self.hasAndGetStr(r.name, r.this)
+		if !exists {
+			panic(r.base.runtime.newReferenceError(r.name))
+		}
 		return v
 	}
-	if r.binding {
-		rt := r.base.runtime
-		panic(rt.newReferenceError(r.name))
+	if v := r.base.self.getStr(r.name, r.this); v != nil {
+		return v
 	}
 	return _undefined
 }
 
 func (r *objStrRef) set(v Value) {
 	if r.strict && r.binding && !r.base.self.hasOwnPropertyStr(r.name) {
-		panic(referenceError(fmt.Sprintf("%s is not defined", r.name)))
+		panic(r.base.runtime.newReferenceError(r.name))
 	}
 	if r.this != nil {
 		r.base.setStr(r.name, v, r.this, r.strict)
@@ -295,6 +304,43 @@ func (r *objStrRef) init(v Value) {
 }
 
 func (r *objStrRef) refname() unistring.String {
+	return r.name
+}
+
+// objEnvRef is a reference to a binding of an object Environment Record (i.e. the object of a 'with' statement).
+// The binding may disappear after it has been resolved (for example, it can be deleted by a Symbol.unscopables
+// getter), so GetBindingValue and SetMutableBinding check that it still exists.
+type objEnvRef struct {
+	base   *Object
+	name   unistring.String
+	strict bool
+}
+
+func (r *objEnvRef) get() Value {
+	// GetBindingValue(N, S): HasProperty first, then Get, fused into a single lookup where
+	// unobservable. The binding could have been deleted by a Symbol.unscopables getter.
+	v, exists := r.base.self.hasAndGetStr(r.name, nil)
+	if !exists {
+		if r.strict {
+			panic(r.base.runtime.newReferenceError(r.name))
+		}
+		return _undefined
+	}
+	return v
+}
+
+func (r *objEnvRef) set(v Value) {
+	if !r.base.self.hasPropertyStr(r.name) && r.strict {
+		panic(r.base.runtime.newReferenceError(r.name))
+	}
+	r.base.self.setOwnStr(r.name, v, r.strict)
+}
+
+func (r *objEnvRef) init(v Value) {
+	r.base.self.setOwnStr(r.name, v, r.strict)
+}
+
+func (r *objEnvRef) refname() unistring.String {
 	return r.name
 }
 
@@ -387,6 +433,8 @@ type vm struct {
 	interruptLock sync.Mutex
 
 	curAsyncRunner *asyncRunner
+
+	profTracker *profTracker
 }
 
 type instruction interface {
@@ -498,10 +546,21 @@ func (s *stash) getByIdx(idx uint32) Value {
 	return s.values[idx]
 }
 
-func (s *stash) getByName(name unistring.String) (v Value, exists bool) {
+// getByName resolves a binding by name. For object stashes (i.e. the object of a 'with' statement)
+// it implements the Object Environment Record's GetBindingValue(N, S) semantics: the binding could
+// have been deleted by a Symbol.unscopables getter, in which case if strict is true a
+// ReferenceError is thrown, otherwise undefined is returned.
+func (s *stash) getByName(name unistring.String, strict bool) (v Value, exists bool) {
 	if s.obj != nil {
 		if stashObjHas(s.obj, name) {
-			return nilSafe(s.obj.self.getStr(name, nil)), true
+			// GetBindingValue(N, S): the binding could have been deleted by a Symbol.unscopables getter
+			if v, exists := s.obj.self.hasAndGetStr(name, nil); exists {
+				return v, true
+			}
+			if strict {
+				panic(s.obj.runtime.newReferenceError(name))
+			}
+			return _undefined, true
 		}
 		return nil, false
 	}
@@ -526,11 +585,10 @@ func (s *stash) getByName(name unistring.String) (v Value, exists bool) {
 func (s *stash) getRefByName(name unistring.String, strict bool) ref {
 	if obj := s.obj; obj != nil {
 		if stashObjHas(obj, name) {
-			return &objStrRef{
-				base:    obj,
-				name:    name,
-				strict:  strict,
-				binding: true,
+			return &objEnvRef{
+				base:   obj,
+				name:   name,
+				strict: strict,
 			}
 		}
 	} else {
@@ -620,8 +678,20 @@ func (vm *vm) halted() bool {
 }
 
 func (vm *vm) run() {
+	if vm.profTracker != nil && !vm.runWithProfiler() {
+		return
+	}
+	count := 0
 	interrupted := false
 	for {
+		if count == 0 {
+			if atomic.LoadInt32(&globalProfiler.enabled) == 1 && !vm.runWithProfiler() {
+				return
+			}
+			count = 100
+		} else {
+			count--
+		}
 		if interrupted = atomic.LoadUint32(&vm.interrupted) != 0; interrupted {
 			break
 		}
@@ -641,6 +711,42 @@ func (vm *vm) run() {
 		vm.interruptLock.Unlock()
 		panic(v)
 	}
+}
+
+func (vm *vm) runWithProfiler() bool {
+	pt := vm.profTracker
+	if pt == nil {
+		pt = globalProfiler.p.registerVm()
+		vm.profTracker = pt
+		defer func() {
+			atomic.StoreInt32(&vm.profTracker.finished, 1)
+			vm.profTracker = nil
+		}()
+	}
+	interrupted := false
+	for {
+		if interrupted = atomic.LoadUint32(&vm.interrupted) != 0; interrupted {
+			return true
+		}
+		pc := vm.pc
+		if pc < 0 || pc >= len(vm.prg.code) {
+			break
+		}
+		vm.prg.code[pc].exec(vm)
+		req := atomic.LoadInt32(&pt.req)
+		if req == profReqStop {
+			return true
+		}
+		if req == profReqDoSample {
+			pt.stop = time.Now()
+
+			pt.numFrames = len(vm.r.CaptureCallStack(len(pt.frames), pt.frames[:0]))
+			pt.frames[0].pc = pc
+			atomic.StoreInt32(&pt.req, profReqSampleReady)
+		}
+	}
+
+	return false
 }
 
 func (vm *vm) Interrupt(v interface{}) {
@@ -1191,7 +1297,7 @@ func (e export) exec(vm *vm) {
 	level := int(e.idx >> 24)
 	idx := uint32(e.idx & 0x00FFFFFF)
 	stash := vm.stash
-	for range level {
+	for i := 0; i < level; i++ {
 		stash = stash.outer
 	}
 	e.callback(vm, func() Value {
@@ -1210,7 +1316,7 @@ func (e exportLex) exec(vm *vm) {
 	level := int(e.idx >> 24)
 	idx := uint32(e.idx & 0x00FFFFFF)
 	stash := vm.stash
-	for range level {
+	for i := 0; i < level; i++ {
 		stash = stash.outer
 	}
 	e.callback(vm, func() Value {
@@ -1383,13 +1489,17 @@ func (_mul) exec(vm *vm) {
 	case valueInt:
 		switch right := right.(type) {
 		case valueInt:
-			if left == 0 && right == -1 || left == -1 && right == 0 {
-				result = _negativeZero
+			if left == 0 || right == 0 {
+				if (left < 0) != (right < 0) {
+					result = _negativeZero
+				} else {
+					result = intToValue(0)
+				}
 				goto end
 			}
 			res := left * right
 			// check for overflow
-			if left == 0 || right == 0 || res/left == right {
+			if res/left == right {
 				result = intToValue(int64(res))
 				goto end
 			}
@@ -1431,7 +1541,7 @@ func (_exp) exec(vm *vm) {
 	var result Value
 	if x, ok := x.(*valueBigInt); ok {
 		if y, ok := y.(*valueBigInt); ok {
-			if (*big.Int)(y).Cmp(big.NewInt(0)) < 0 {
+			if (*big.Int)(y).Cmp(big0) < 0 {
 				panic(vm.r.newError(vm.r.getRangeError(), "exponent must be positive"))
 			}
 			result = (*valueBigInt)(new(big.Int).Exp((*big.Int)(x), (*big.Int)(y), nil))
@@ -1463,13 +1573,13 @@ func (_div) exec(vm *vm) {
 
 	if left, ok := leftValue.(*valueBigInt); ok {
 		if right, ok := rightValue.(*valueBigInt); ok {
-			if (*big.Int)(right).Cmp(big.NewInt(0)) == 0 {
+			if (*big.Int)(right).Cmp(big0) == 0 {
 				panic(vm.r.newError(vm.r.getRangeError(), "Division by zero"))
 			}
 			if (*big.Int)(left).CmpAbs((*big.Int)(right)) < 0 {
-				result = (*valueBigInt)(big.NewInt(0))
+				result = (*valueBigInt)(big0)
 			} else {
-				i, _ := new(big.Int).QuoRem((*big.Int)(left), (*big.Int)(right), big.NewInt(0))
+				i, _ := new(big.Int).QuoRem((*big.Int)(left), (*big.Int)(right), &big.Int{})
 				result = (*valueBigInt)(i)
 			}
 			goto end
@@ -1564,9 +1674,9 @@ func (_mod) exec(vm *vm) {
 	case *valueBigInt:
 		if right, ok := right.(*valueBigInt); ok {
 			switch {
-			case (*big.Int)(right).Cmp(big.NewInt(0)) == 0:
+			case (*big.Int)(right).Cmp(big0) == 0:
 				panic(vm.r.newError(vm.r.getRangeError(), "Division by zero"))
-			case (*big.Int)(left).Cmp(big.NewInt(0)) < 0:
+			case (*big.Int)(left).Cmp(big0) < 0:
 				abs := new(big.Int).Abs((*big.Int)(left))
 				v := new(big.Int).Mod(abs, (*big.Int)(right))
 				result = (*valueBigInt)(v.Neg(v))
@@ -1633,7 +1743,7 @@ func (_inc) exec(vm *vm) {
 
 	switch n := v.(type) {
 	case *valueBigInt:
-		v = (*valueBigInt)(new(big.Int).Add((*big.Int)(n), big.NewInt(1)))
+		v = (*valueBigInt)(new(big.Int).Add((*big.Int)(n), big1))
 	case valueInt:
 		v = intToValue(int64(n + 1))
 	default:
@@ -1653,7 +1763,7 @@ func (_dec) exec(vm *vm) {
 
 	switch n := v.(type) {
 	case *valueBigInt:
-		v = (*valueBigInt)(new(big.Int).Sub((*big.Int)(n), big.NewInt(1)))
+		v = (*valueBigInt)(new(big.Int).Sub((*big.Int)(n), big1))
 	case valueInt:
 		v = intToValue(int64(n - 1))
 	default:
@@ -1758,6 +1868,23 @@ func (_bnot) exec(vm *vm) {
 	vm.pc++
 }
 
+// bigIntShift returns x << n, or x >> -n if n is negative. It panics with a
+// RangeError if the result of a left shift has more than maxBigIntBits bits.
+func bigIntShift(x, n *big.Int) *big.Int {
+	k := new(big.Int).Abs(n)
+	// x << n has x.BitLen()+n bits.
+	if n.Sign() > 0 && x.Sign() != 0 && (!k.IsInt64() || k.Int64() > maxBigIntBits-int64(x.BitLen())) {
+		panic(rangeError("Maximum BigInt size exceeded"))
+	}
+	if k.BitLen() > bits.UintSize {
+		return new(big.Int).Rsh(x, math.MaxUint)
+	}
+	if n.Sign() < 0 {
+		return new(big.Int).Rsh(x, uint(k.Uint64()))
+	}
+	return new(big.Int).Lsh(x, uint(k.Uint64()))
+}
+
 type _sal struct{}
 
 var sal _sal
@@ -1769,12 +1896,7 @@ func (_sal) exec(vm *vm) {
 
 	if left, ok := left.(*valueBigInt); ok {
 		if right, ok := right.(*valueBigInt); ok {
-			n := uint((*big.Int)(right).Uint64())
-			if (*big.Int)(right).Sign() < 0 {
-				result = (*valueBigInt)(new(big.Int).Rsh((*big.Int)(left), n))
-			} else {
-				result = (*valueBigInt)(new(big.Int).Lsh((*big.Int)(left), n))
-			}
+			result = (*valueBigInt)(bigIntShift((*big.Int)(left), (*big.Int)(right)))
 			goto end
 		}
 		panic(errMixBigIntType)
@@ -1800,12 +1922,7 @@ func (_sar) exec(vm *vm) {
 
 	if left, ok := left.(*valueBigInt); ok {
 		if right, ok := right.(*valueBigInt); ok {
-			n := uint((*big.Int)(right).Uint64())
-			if (*big.Int)(right).Sign() < 0 {
-				result = (*valueBigInt)(new(big.Int).Lsh((*big.Int)(left), n))
-			} else {
-				result = (*valueBigInt)(new(big.Int).Rsh((*big.Int)(left), n))
-			}
+			result = (*valueBigInt)(bigIntShift((*big.Int)(left), new(big.Int).Neg((*big.Int)(right))))
 			goto end
 		}
 		panic(errMixBigIntType)
@@ -2845,7 +2962,7 @@ func (vm *vm) setLocalLex(s int) {
 	level := s >> 24
 	idx := uint32(s & 0x00FFFFFF)
 	stash := vm.stash
-	for range level {
+	for i := 0; i < level; i++ {
 		stash = stash.outer
 	}
 	p := &stash.values[idx]
@@ -2861,7 +2978,7 @@ func (vm *vm) initLocal(s int) {
 	level := s >> 24
 	idx := uint32(s & 0x00FFFFFF)
 	stash := vm.stash
-	for range level {
+	for i := 0; i < level; i++ {
 		stash = stash.outer
 	}
 	stash.initByIdx(idx, v)
@@ -2909,7 +3026,7 @@ func (s initIndirect) exec(vm *vm) {
 	level := int(s.idx) >> 24
 	idx := uint32(s.idx & 0x00FFFFFF)
 	stash := vm.stash
-	for range level {
+	for i := 0; i < level; i++ {
 		stash = stash.outer
 	}
 	stash.initByIdx(idx, vm.r.ToValue(s.getter))
@@ -2961,12 +3078,28 @@ end:
 	vm.pc++
 }
 
-type deleteVar unistring.String
+// deleteVar deletes an unqualified name (the 'delete' operator in non-strict code).
+// It walks the environment (stash) chain innermost out. If level != 0, a statically
+// known binding exists in an enclosing non-dynamic scope this number of levels up (a var/let/const or a function
+// declaration): such a binding is not deletable, so if the walk finds nothing (the binding is
+// stack-resident or a non-configurable global property) the result is false. If level is 0 the
+// name is not statically bound, so the walk falls through to the global object: deleting a
+// non-existent global yields true, a non-configurable one false.
+type deleteVar struct {
+	name  unistring.String
+	level uint8
+}
 
-func (d deleteVar) exec(vm *vm) {
-	name := unistring.String(d)
-	ret := true
-	for stash := vm.stash; stash != nil; stash = stash.outer {
+func (d *deleteVar) exec(vm *vm) {
+	name := d.name
+	// Nothing found in the environment chain: a statically known binding is not deletable
+	// (false), an unresolvable reference is deletable (true).
+	ret := false
+	k := int(d.level)
+	if k == 0 {
+		k = math.MaxInt
+	}
+	for stash := vm.stash; stash != nil && k > 0; stash = stash.outer {
 		if stash.obj != nil {
 			if stashObjHas(stash.obj, name) {
 				ret = stash.obj.self.deleteStr(name, false)
@@ -2976,37 +3109,23 @@ func (d deleteVar) exec(vm *vm) {
 			if idx, exists := stash.names[name]; exists {
 				if idx&(maskVar|maskDeletable) == maskVar|maskDeletable {
 					stash.deleteBinding(name)
-				} else {
-					ret = false
+					ret = true
 				}
 				goto end
 			}
 		}
+		k--
 	}
 
-	if vm.r.globalObject.self.hasPropertyStr(name) {
-		ret = vm.r.globalObject.self.deleteStr(name, false)
+	if k > 0 {
+		if vm.r.globalObject.self.hasPropertyStr(name) {
+			ret = vm.r.globalObject.self.deleteStr(name, false)
+		} else {
+			ret = true
+		}
 	}
 
 end:
-	if ret {
-		vm.push(valueTrue)
-	} else {
-		vm.push(valueFalse)
-	}
-	vm.pc++
-}
-
-type deleteGlobal unistring.String
-
-func (d deleteGlobal) exec(vm *vm) {
-	name := unistring.String(d)
-	var ret bool
-	if vm.r.globalObject.self.hasPropertyStr(name) {
-		ret = vm.r.globalObject.self.deleteStr(name, false)
-	} else {
-		ret = true
-	}
 	if ret {
 		vm.push(valueTrue)
 	} else {
@@ -3077,7 +3196,7 @@ func (g loadStash) exec(vm *vm) {
 	level := int(g >> 24)
 	idx := uint32(g & 0x00FFFFFF)
 	stash := vm.stash
-	for range level {
+	for i := 0; i < level; i++ {
 		stash = stash.outer
 	}
 
@@ -3092,7 +3211,7 @@ func (g loadStashLex) exec(vm *vm) {
 	level := int(g >> 24)
 	idx := uint32(g & 0x00FFFFFF)
 	stash := vm.stash
-	for range level {
+	for i := 0; i < level; i++ {
 		stash = stash.outer
 	}
 
@@ -3111,6 +3230,7 @@ type loadMixed struct {
 	name   unistring.String
 	idx    uint32
 	callee bool
+	strict bool
 }
 
 func (g *loadMixed) exec(vm *vm) {
@@ -3118,8 +3238,8 @@ func (g *loadMixed) exec(vm *vm) {
 	idx := g.idx & 0x00FFFFFF
 	stash := vm.stash
 	name := g.name
-	for range level {
-		if v, found := stash.getByName(name); found {
+	for i := 0; i < level; i++ {
+		if v, found := stash.getByName(name, g.strict); found {
 			if g.callee {
 				if stash.obj != nil {
 					vm.push(stash.obj)
@@ -3151,8 +3271,8 @@ func (g *loadMixedLex) exec(vm *vm) {
 	idx := g.idx & 0x00FFFFFF
 	stash := vm.stash
 	name := g.name
-	for range level {
-		if v, found := stash.getByName(name); found {
+	for i := 0; i < level; i++ {
+		if v, found := stash.getByName(name, g.strict); found {
 			if g.callee {
 				if stash.obj != nil {
 					vm.push(stash.obj)
@@ -3187,6 +3307,7 @@ type loadMixedStack struct {
 	idx    int
 	level  uint8
 	callee bool
+	strict bool
 }
 
 // same as loadMixedStack, but the args have been moved to stash (therefore stack layout is different)
@@ -3196,8 +3317,8 @@ func (g *loadMixedStack) exec(vm *vm) {
 	stash := vm.stash
 	name := g.name
 	level := int(g.level)
-	for range level {
-		if v, found := stash.getByName(name); found {
+	for i := 0; i < level; i++ {
+		if v, found := stash.getByName(name, g.strict); found {
 			if g.callee {
 				if stash.obj != nil {
 					vm.push(stash.obj)
@@ -3223,8 +3344,8 @@ func (g *loadMixedStack1) exec(vm *vm) {
 	stash := vm.stash
 	name := g.name
 	level := int(g.level)
-	for range level {
-		if v, found := stash.getByName(name); found {
+	for i := 0; i < level; i++ {
+		if v, found := stash.getByName(name, g.strict); found {
 			if g.callee {
 				if stash.obj != nil {
 					vm.push(stash.obj)
@@ -3255,8 +3376,8 @@ func (g *loadMixedStackLex) exec(vm *vm) {
 	stash := vm.stash
 	name := g.name
 	level := int(g.level)
-	for range level {
-		if v, found := stash.getByName(name); found {
+	for i := 0; i < level; i++ {
+		if v, found := stash.getByName(name, g.strict); found {
 			if g.callee {
 				if stash.obj != nil {
 					vm.push(stash.obj)
@@ -3282,8 +3403,8 @@ func (g *loadMixedStack1Lex) exec(vm *vm) {
 	stash := vm.stash
 	name := g.name
 	level := int(g.level)
-	for range level {
-		if v, found := stash.getByName(name); found {
+	for i := 0; i < level; i++ {
+		if v, found := stash.getByName(name, g.strict); found {
 			if g.callee {
 				if stash.obj != nil {
 					vm.push(stash.obj)
@@ -3348,7 +3469,7 @@ func (r *resolveMixed) exec(vm *vm) {
 	idx := r.idx & 0x00FFFFFF
 	stash := vm.stash
 	var ref ref
-	for range level {
+	for i := 0; i < level; i++ {
 		ref = stash.getRefByName(r.name, r.strict)
 		if ref != nil {
 			goto end
@@ -3386,7 +3507,7 @@ func (r *resolveMixedStack) exec(vm *vm) {
 	stash := vm.stash
 	var ref ref
 	var idx int
-	for range level {
+	for i := 0; i < level; i++ {
 		ref = stash.getRefByName(r.name, r.strict)
 		if ref != nil {
 			goto end
@@ -3411,7 +3532,7 @@ func (r *resolveMixedStack1) exec(vm *vm) {
 	level := int(r.level)
 	stash := vm.stash
 	var ref ref
-	for range level {
+	for i := 0; i < level; i++ {
 		ref = stash.getRefByName(r.name, r.strict)
 		if ref != nil {
 			goto end
@@ -3488,19 +3609,38 @@ func (_initValueP) exec(vm *vm) {
 	vm.pc++
 }
 
-type loadDynamic unistring.String
+// getGlobalBinding resolves a binding in the global object environment record per the Global
+// Environment Record's GetBindingValue(N, S) semantics: HasProperty(bindingObject, N) first (so the
+// Proxy 'has' trap is correctly consulted when the global object is a Proxy), then Get.
+// Returns nil if the binding does not exist.
+func (vm *vm) getGlobalBinding(name unistring.String) Value {
+	if v, exists := vm.r.globalObject.self.hasAndGetStr(name, nil); exists {
+		return v
+	}
+	return nil
+}
+
+// loadDynamic loads a dynamically resolved variable. Its stash scan implements the strict
+// GetBindingValue(N, S) semantics of object stashes (i.e. the objects of 'with' statements): if the
+// binding has been deleted — which can happen via a Symbol.unscopables getter — a ReferenceError is
+// thrown in strict mode. The global fallback follows the Global Environment Record's
+// GetBindingValue(N, S) semantics (see getGlobalBinding).
+type loadDynamic struct {
+	name   unistring.String
+	strict bool
+}
 
 func (n loadDynamic) exec(vm *vm) {
-	name := unistring.String(n)
+	name := n.name
 	var val Value
 	for stash := vm.stash; stash != nil; stash = stash.outer {
-		if v, exists := stash.getByName(name); exists {
+		if v, exists := stash.getByName(name, n.strict); exists {
 			val = v
 			break
 		}
 	}
 	if val == nil {
-		val = vm.r.globalObject.self.getStr(name, nil)
+		val = vm.getGlobalBinding(name)
 		if val == nil {
 			vm.throw(vm.r.newReferenceError(name))
 			return
@@ -3510,19 +3650,19 @@ func (n loadDynamic) exec(vm *vm) {
 	vm.pc++
 }
 
-type loadDynamicRef unistring.String
+type loadDynamicRef loadDynamic
 
 func (n loadDynamicRef) exec(vm *vm) {
-	name := unistring.String(n)
+	name := n.name
 	var val Value
 	for stash := vm.stash; stash != nil; stash = stash.outer {
-		if v, exists := stash.getByName(name); exists {
+		if v, exists := stash.getByName(name, n.strict); exists {
 			val = v
 			break
 		}
 	}
 	if val == nil {
-		val = vm.r.globalObject.self.getStr(name, nil)
+		val = vm.getGlobalBinding(name)
 		if val == nil {
 			val = valueUnresolved{r: vm.r, ref: name}
 		}
@@ -3531,21 +3671,21 @@ func (n loadDynamicRef) exec(vm *vm) {
 	vm.pc++
 }
 
-type loadDynamicCallee unistring.String
+type loadDynamicCallee loadDynamic
 
 func (n loadDynamicCallee) exec(vm *vm) {
-	name := unistring.String(n)
+	name := n.name
 	var val Value
 	var callee *Object
 	for stash := vm.stash; stash != nil; stash = stash.outer {
-		if v, exists := stash.getByName(name); exists {
+		if v, exists := stash.getByName(name, n.strict); exists {
 			callee = stash.obj
 			val = v
 			break
 		}
 	}
 	if val == nil {
-		val = vm.r.globalObject.self.getStr(name, nil)
+		val = vm.getGlobalBinding(name)
 		if val == nil {
 			val = valueUnresolved{r: vm.r, ref: name}
 		}
@@ -3795,7 +3935,9 @@ func (e *enterFunc) exec(vm *vm) {
 	if len(e.names) > 0 {
 		if e.extensible {
 			m := make(map[unistring.String]uint32, len(e.names))
-			maps.Copy(m, e.names)
+			for name, idx := range e.names {
+				m[name] = idx
+			}
 			stash.names = m
 		} else {
 			stash.names = e.names
@@ -3862,7 +4004,9 @@ func (e *enterFunc1) exec(vm *vm) {
 	if len(e.names) > 0 {
 		if e.extensible {
 			m := make(map[unistring.String]uint32, len(e.names))
-			maps.Copy(m, e.names)
+			for name, idx := range e.names {
+				m[name] = idx
+			}
 			stash.names = m
 		} else {
 			stash.names = e.names
@@ -3907,7 +4051,9 @@ func (e *enterFuncBody) exec(vm *vm) {
 		if len(e.names) > 0 {
 			if e.extensible {
 				m := make(map[unistring.String]uint32, len(e.names))
-				maps.Copy(m, e.names)
+				for name, idx := range e.names {
+					m[name] = idx
+				}
 				stash.names = m
 			} else {
 				stash.names = e.names
@@ -4195,28 +4341,28 @@ func (vm *vm) checkBindVarsGlobal(names []unistring.String) {
 	if bo, ok := o.(*baseObject); ok {
 		// shortcut
 		if bo.extensible {
-			for ni := range names {
-				if _, exists := sn[names[ni]]; exists {
-					panic(vm.alreadyDeclared(names[ni]))
+			for _, name := range names {
+				if _, exists := sn[name]; exists {
+					panic(vm.alreadyDeclared(name))
 				}
 			}
 		} else {
-			for ni := range names {
-				if !bo.hasOwnPropertyStr(names[ni]) {
-					panic(vm.r.NewTypeError("Cannot define global variable '%s', global object is not extensible", names[ni]))
+			for _, name := range names {
+				if !bo.hasOwnPropertyStr(name) {
+					panic(vm.r.NewTypeError("Cannot define global variable '%s', global object is not extensible", name))
 				}
-				if _, exists := sn[names[ni]]; exists {
-					panic(vm.alreadyDeclared(names[ni]))
+				if _, exists := sn[name]; exists {
+					panic(vm.alreadyDeclared(name))
 				}
 			}
 		}
 	} else {
-		for ni := range names {
-			if !o.hasOwnPropertyStr(names[ni]) && !o.isExtensible() {
-				panic(vm.r.NewTypeError("Cannot define global variable '%s', global object is not extensible", names[ni]))
+		for _, name := range names {
+			if !o.hasOwnPropertyStr(name) && !o.isExtensible() {
+				panic(vm.r.NewTypeError("Cannot define global variable '%s', global object is not extensible", name))
 			}
-			if _, exists := sn[names[ni]]; exists {
-				panic(vm.alreadyDeclared(names[ni]))
+			if _, exists := sn[name]; exists {
+				panic(vm.alreadyDeclared(name))
 			}
 		}
 	}
@@ -4225,9 +4371,9 @@ func (vm *vm) checkBindVarsGlobal(names []unistring.String) {
 func (vm *vm) createGlobalVarBindings(names []unistring.String, d bool) {
 	o := vm.r.globalObject.self
 	if bo, ok := o.(*templatedObject); ok {
-		for ni := range names {
-			if !bo.hasOwnPropertyStr(names[ni]) && bo.extensible {
-				bo._putProp(names[ni], _undefined, true, true, d)
+		for _, name := range names {
+			if !bo.hasOwnPropertyStr(name) && bo.extensible {
+				bo._putProp(name, _undefined, true, true, d)
 			}
 		}
 	} else {
@@ -4237,15 +4383,15 @@ func (vm *vm) createGlobalVarBindings(names []unistring.String, d bool) {
 		} else {
 			cf = FLAG_FALSE
 		}
-		for ni := range names {
-			if !o.hasOwnPropertyStr(names[ni]) && o.isExtensible() {
-				o.defineOwnPropertyStr(names[ni], PropertyDescriptor{
+		for _, name := range names {
+			if !o.hasOwnPropertyStr(name) && o.isExtensible() {
+				o.defineOwnPropertyStr(name, PropertyDescriptor{
 					Value:        _undefined,
 					Writable:     FLAG_TRUE,
 					Enumerable:   FLAG_TRUE,
 					Configurable: cf,
 				}, true)
-				o.setOwnStr(names[ni], _undefined, false)
+				o.setOwnStr(name, _undefined, false)
 			}
 		}
 	}
@@ -4258,12 +4404,12 @@ func (vm *vm) createGlobalFuncBindings(names []unistring.String, d bool) {
 	if o, ok := o.(*templatedObject); ok {
 		shortcutObj = o
 	}
-	for i := range names {
+	for i, name := range names {
 		var desc PropertyDescriptor
-		prop := o.getOwnPropStr(names[i])
+		prop := o.getOwnPropStr(name)
 		desc.Value = vm.stack[b+i]
 		if shortcutObj != nil && prop == nil && shortcutObj.extensible {
-			shortcutObj._putProp(names[i], desc.Value, true, true, d)
+			shortcutObj._putProp(name, desc.Value, true, true, d)
 		} else {
 			if prop, ok := prop.(*valueProperty); ok && !prop.configurable {
 				// no-op
@@ -4277,10 +4423,10 @@ func (vm *vm) createGlobalFuncBindings(names []unistring.String, d bool) {
 				}
 			}
 			if shortcutObj != nil {
-				shortcutObj.defineOwnPropertyStr(names[i], desc, true)
+				shortcutObj.defineOwnPropertyStr(name, desc, true)
 			} else {
-				o.defineOwnPropertyStr(names[i], desc, true)
-				o.setOwnStr(names[i], desc.Value, false) // not a bug, see https://262.ecma-international.org/#sec-createglobalfunctionbinding
+				o.defineOwnPropertyStr(name, desc, true)
+				o.setOwnStr(name, desc.Value, false) // not a bug, see https://262.ecma-international.org/#sec-createglobalfunctionbinding
 			}
 		}
 	}
@@ -4290,11 +4436,11 @@ func (vm *vm) createGlobalFuncBindings(names []unistring.String, d bool) {
 func (vm *vm) checkBindFuncsGlobal(names []unistring.String) {
 	o := vm.r.globalObject.self
 	sn := vm.r.global.stash.names
-	for i := range names {
-		if _, exists := sn[names[i]]; exists {
-			panic(vm.alreadyDeclared(names[i]))
+	for _, name := range names {
+		if _, exists := sn[name]; exists {
+			panic(vm.alreadyDeclared(name))
 		}
-		prop := o.getOwnPropStr(names[i])
+		prop := o.getOwnPropStr(name)
 		allowed := true
 		switch prop := prop.(type) {
 		case nil:
@@ -4303,7 +4449,7 @@ func (vm *vm) checkBindFuncsGlobal(names []unistring.String) {
 			allowed = prop.configurable || prop.getterFunc == nil && prop.setterFunc == nil && prop.writable && prop.enumerable
 		}
 		if !allowed {
-			panic(vm.r.NewTypeError("Cannot redefine global function '%s'", names[i]))
+			panic(vm.r.NewTypeError("Cannot redefine global function '%s'", name))
 		}
 	}
 }
@@ -4311,16 +4457,16 @@ func (vm *vm) checkBindFuncsGlobal(names []unistring.String) {
 func (vm *vm) checkBindLexGlobal(names []unistring.String) {
 	o := vm.r.globalObject.self
 	s := &vm.r.global.stash
-	for i := range names {
-		if _, exists := s.names[names[i]]; exists {
+	for _, name := range names {
+		if _, exists := s.names[name]; exists {
 			goto fail
 		}
-		if prop, ok := o.getOwnPropStr(names[i]).(*valueProperty); ok && !prop.configurable {
+		if prop, ok := o.getOwnPropStr(name).(*valueProperty); ok && !prop.configurable {
 			goto fail
 		}
 		continue
 	fail:
-		panic(vm.alreadyDeclared(names[i]))
+		panic(vm.alreadyDeclared(name))
 	}
 }
 
@@ -4331,10 +4477,10 @@ type bindVars struct {
 
 func (d *bindVars) exec(vm *vm) {
 	var target *stash
-	for i := range d.names {
+	for _, name := range d.names {
 		for s := vm.stash; s != nil; s = s.outer {
-			if idx, exists := s.names[d.names[i]]; exists && idx&maskVar == 0 {
-				vm.throw(vm.alreadyDeclared(d.names[i]))
+			if idx, exists := s.names[name]; exists && idx&maskVar == 0 {
+				vm.throw(vm.alreadyDeclared(name))
 				return
 			}
 			if s.isVariable() {
@@ -4347,8 +4493,8 @@ func (d *bindVars) exec(vm *vm) {
 		target = vm.stash
 	}
 	deletable := d.deletable
-	for i := range d.names {
-		target.createBinding(d.names[i], deletable)
+	for _, name := range d.names {
+		target.createBinding(name, deletable)
 	}
 	vm.pc++
 }
@@ -4366,11 +4512,11 @@ func (b *bindGlobal) exec(vm *vm) {
 	vm.checkBindVarsGlobal(b.vars)
 
 	s := &vm.r.global.stash
-	for ni := range b.lets {
-		s.createLexBinding(b.lets[ni], false)
+	for _, name := range b.lets {
+		s.createLexBinding(name, false)
 	}
-	for ni := range b.consts {
-		s.createLexBinding(b.consts[ni], true)
+	for _, name := range b.consts {
+		s.createLexBinding(name, true)
 	}
 	vm.createGlobalFuncBindings(b.funcs, b.deletable)
 	vm.createGlobalVarBindings(b.vars, b.deletable)
@@ -4875,6 +5021,7 @@ type enterFinally struct{}
 func (enterFinally) exec(vm *vm) {
 	tf := &vm.tryStack[len(vm.tryStack)-1]
 	tf.finallyPos = -1
+	tf.catchPos = -1
 	vm.pc++
 }
 
@@ -5112,8 +5259,8 @@ func (formalArgs createArgsMapped) exec(vm *vm) {
 		})
 	}
 
-	for vi := range vm.stash.extraArgs {
-		args._put(unistring.String(strconv.Itoa(i)), vm.stash.extraArgs[vi])
+	for _, v := range vm.stash.extraArgs {
+		args._put(unistring.String(strconv.Itoa(i)), v)
 		i++
 	}
 
@@ -5474,8 +5621,8 @@ func (n concatStrings) exec(vm *vm) {
 	strs := vm.stack[vm.sp-int(n) : vm.sp]
 	length := 0
 	allAscii := true
-	for i := range strs {
-		switch s := strs[i].(type) {
+	for i, s := range strs {
+		switch s := s.(type) {
 		case asciiString:
 			length += s.Length()
 		case unicodeString:
@@ -5491,6 +5638,15 @@ func (n concatStrings) exec(vm *vm) {
 				strs[i] = asciiString(s.s)
 				length += len(s.s)
 			}
+		case *concatString:
+			flat := s.flatten()
+			strs[i] = flat
+			if _, ok := flat.(asciiString); ok {
+				length += flat.Length()
+			} else {
+				length += flat.Length()
+				allAscii = false
+			}
 		default:
 			panic(unknownStringTypeErr(s))
 		}
@@ -5500,15 +5656,15 @@ func (n concatStrings) exec(vm *vm) {
 	if allAscii {
 		var buf strings.Builder
 		buf.Grow(toStringLen(length))
-		for si := range strs {
-			buf.WriteString(string(strs[si].(asciiString)))
+		for _, s := range strs {
+			buf.WriteString(string(s.(asciiString)))
 		}
 		vm.stack[vm.sp-1] = asciiString(buf.String())
 	} else {
 		var buf unicodeStringBuilder
 		buf.Grow(length)
-		for si := range strs {
-			buf.writeString(strs[si].(String))
+		for _, s := range strs {
+			buf.writeString(s.(String))
 		}
 		vm.stack[vm.sp-1] = buf.String()
 	}
@@ -5609,14 +5765,14 @@ func (vm *vm) fillPrivateNamesMap(typ *privateEnvType, privateFields, privateMet
 			penv = make(privateNames)
 			vm.privEnv.names = penv
 		}
-		for idx := range privateFields {
-			penv[privateFields[idx]] = &privateId{
+		for idx, field := range privateFields {
+			penv[field] = &privateId{
 				typ: typ,
 				idx: uint32(idx),
 			}
 		}
-		for idx := range privateMethods {
-			penv[privateMethods[idx]] = &privateId{
+		for idx, method := range privateMethods {
+			penv[method] = &privateId{
 				typ:      typ,
 				idx:      uint32(idx),
 				isMethod: true,
@@ -5729,7 +5885,7 @@ func (vm *vm) getStashPtr(s uint32) *Value {
 	level := int(s) >> 24
 	idx := s & 0x00FFFFFF
 	stash := vm.stash
-	for range level {
+	for i := 0; i < level; i++ {
 		stash = stash.outer
 	}
 
@@ -5741,7 +5897,7 @@ type getThisDynamic struct{}
 func (getThisDynamic) exec(vm *vm) {
 	for stash := vm.stash; stash != nil; stash = stash.outer {
 		if stash.obj == nil {
-			if v, exists := stash.getByName(thisBindingName); exists {
+			if v, exists := stash.getByName(thisBindingName, false); exists {
 				vm.push(v)
 				vm.pc++
 				return
@@ -5773,7 +5929,7 @@ func (r resolveThisStash) exec(vm *vm) {
 	level := int(r) >> 24
 	idx := r & 0x00FFFFFF
 	stash := vm.stash
-	for range level {
+	for i := 0; i < level; i++ {
 		stash = stash.outer
 	}
 	vm.refStack = append(vm.refStack, &thisRef{v: &stash.values, idx: int(idx)})
@@ -5935,7 +6091,7 @@ type getPrivatePropRes resolvedPrivateName
 
 func (vm *vm) getPrivateType(level uint8, isStatic bool) *privateEnvType {
 	e := vm.privEnv
-	for range level {
+	for i := uint8(0); i < level; i++ {
 		e = e.outer
 	}
 	if isStatic {

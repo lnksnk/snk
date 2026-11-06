@@ -81,8 +81,8 @@ func (r *Runtime) math_hypot(call FunctionCall) Value {
 	var max float64
 	var hasNaN bool
 	absValues := make([]float64, 0, len(call.Arguments))
-	for vi := range call.Arguments {
-		arg := nilSafe(call.Arguments[vi]).ToFloat()
+	for _, v := range call.Arguments {
+		arg := nilSafe(v).ToFloat()
 		if math.IsNaN(arg) {
 			hasNaN = true
 		} else {
@@ -141,8 +141,8 @@ func (r *Runtime) math_log2(call FunctionCall) Value {
 func (r *Runtime) math_max(call FunctionCall) Value {
 	result := math.Inf(-1)
 	args := call.Arguments
-	for i := range args {
-		n := nilSafe(args[i]).ToFloat()
+	for i, arg := range args {
+		n := nilSafe(arg).ToFloat()
 		if math.IsNaN(n) {
 			args = args[i+1:]
 			goto NaNLoop
@@ -154,8 +154,8 @@ func (r *Runtime) math_max(call FunctionCall) Value {
 
 NaNLoop:
 	// All arguments still need to be coerced to number according to the specs.
-	for ai := range args {
-		nilSafe(args[ai]).ToFloat()
+	for _, arg := range args {
+		nilSafe(arg).ToFloat()
 	}
 	return _NaN
 }
@@ -163,8 +163,8 @@ NaNLoop:
 func (r *Runtime) math_min(call FunctionCall) Value {
 	result := math.Inf(1)
 	args := call.Arguments
-	for i := range args {
-		n := nilSafe(args[i]).ToFloat()
+	for i, arg := range args {
+		n := nilSafe(arg).ToFloat()
 		if math.IsNaN(n) {
 			args = args[i+1:]
 			goto NaNLoop
@@ -176,8 +176,8 @@ func (r *Runtime) math_min(call FunctionCall) Value {
 
 NaNLoop:
 	// All arguments still need to be coerced to number according to the specs.
-	for ai := range args {
-		nilSafe(args[ai]).ToFloat()
+	for _, arg := range args {
+		nilSafe(arg).ToFloat()
 	}
 	return _NaN
 }
@@ -242,10 +242,15 @@ func (r *Runtime) math_round(call FunctionCall) Value {
 }
 
 func (r *Runtime) math_sign(call FunctionCall) Value {
-	arg := call.Argument(0)
-	num := arg.ToFloat()
-	if math.IsNaN(num) || num == 0 { // this will match -0 too
-		return arg
+	num := call.Argument(0).ToFloat()
+	if math.IsNaN(num) {
+		return _NaN
+	}
+	if num == 0 {
+		if math.Signbit(num) {
+			return _negativeZero
+		}
+		return _positiveZero
 	}
 	if num > 0 {
 		return intToValue(1)

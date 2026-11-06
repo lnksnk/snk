@@ -163,6 +163,10 @@ func (s *stringObject) setLength() {
 	s._put("length", &s.lengthProp)
 }
 
+func (s *stringObject) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	return s.hasAndGetOwnStr(name, s.getOwnPropStr(name), receiver)
+}
+
 func (s *stringObject) getStr(name unistring.String, receiver Value) Value {
 	if i := strToGoIdx(name); i >= 0 && i < s.length {
 		return s._getIdx(i)
@@ -281,7 +285,7 @@ func (s *stringObject) iterateStringKeys() iterNextFunc {
 }
 
 func (s *stringObject) stringKeys(all bool, accum []Value) []Value {
-	for i := range s.length {
+	for i := 0; i < s.length; i++ {
 		accum = append(accum, asciiString(strconv.Itoa(i)))
 	}
 
@@ -334,6 +338,8 @@ func devirtualizeString(s String) (asciiString, unicodeString) {
 			return "", s.u
 		}
 		return asciiString(s.s), nil
+	case *concatString:
+		return devirtualizeString(s.flatten())
 	default:
 		panic(unknownStringTypeErr(s))
 	}

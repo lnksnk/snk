@@ -169,11 +169,11 @@ func (ir *iteratorRecord) stepDone() bool {
 // (if any) is thrown after all the iterators have been closed.
 func closeIterators(iters []*iteratorRecord, ex interface{}) {
 	for i := len(iters) - 1; i >= 0; i-- {
-		if iters[i] != nil {
+		if iter := iters[i]; iter != nil {
 			if ex != nil {
-				_ = tryFunc(iters[i].returnIter)
+				_ = tryFunc(iter.returnIter)
 			} else {
-				ex = tryFunc(iters[i].returnIter)
+				ex = tryFunc(iter.returnIter)
 			}
 		}
 	}
@@ -493,10 +493,10 @@ func (r *Runtime) iterator_concat(call FunctionCall) Value {
 		openMethod func(FunctionCall) Value
 	}
 	iterables := make([]iterable, len(call.Arguments))
-	for i := range call.Arguments {
-		obj, ok := call.Arguments[i].(*Object)
+	for i, item := range call.Arguments {
+		obj, ok := item.(*Object)
 		if !ok {
-			panic(r.NewTypeError("%s is not an object", call.Arguments[i].String()))
+			panic(r.NewTypeError("%s is not an object", item.String()))
 		}
 		method := toMethod(obj.self.getSym(SymIterator, nil))
 		if method == nil {
@@ -588,15 +588,15 @@ func (r *Runtime) iteratorZip(iters []*iteratorRecord, mode iteratorZipMode, pad
 			return nil, false
 		}
 		results := make([]Value, len(iters))
-		for i := range iters {
-			if iters[i] == nil {
+		for i, iter := range iters {
+			if iter == nil {
 				results[i] = padding[i]
 				continue
 			}
 			var value Value
 			var ok bool
 			if ex := tryFunc(func() {
-				value, ok = iters[i].stepValue()
+				value, ok = iter.stepValue()
 			}); ex != nil {
 				iters[i] = nil
 				closeIterators(iters, ex)
@@ -627,8 +627,8 @@ func (r *Runtime) iteratorZip(iters []*iteratorRecord, mode iteratorZipMode, pad
 					return nil, false
 				}
 				open := false
-				for ii := range iters {
-					if iters[ii] != nil {
+				for _, iter := range iters {
+					if iter != nil {
 						open = true
 						break
 					}
@@ -725,8 +725,8 @@ func (r *Runtime) iterator_zipKeyed(call FunctionCall) Value {
 		padding = make([]Value, len(iters))
 		if paddingOption != nil {
 			if ex := tryFunc(func() {
-				for i := range keys {
-					padding[i] = nilSafe(paddingOption.get(keys[i], nil))
+				for i, key := range keys {
+					padding[i] = nilSafe(paddingOption.get(key, nil))
 				}
 			}); ex != nil {
 				closeIterators(iters, ex)
@@ -739,8 +739,8 @@ func (r *Runtime) iterator_zipKeyed(call FunctionCall) Value {
 	}
 	return r.iteratorZip(iters, mode, padding, func(results []Value) Value {
 		obj := r.newBaseObject(nil, classObject).val
-		for i := range keys {
-			createDataPropertyOrThrow(obj, keys[i], results[i])
+		for i, key := range keys {
+			createDataPropertyOrThrow(obj, key, results[i])
 		}
 		return obj
 	})

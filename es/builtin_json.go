@@ -143,7 +143,7 @@ func (r *Runtime) builtinJSON_reviveWalk(reviver func(FunctionCall) Value, holde
 	if object, ok := value.(*Object); ok {
 		if isArray(object) {
 			length := toLength(object.self.getStr("length", nil))
-			for index := range length {
+			for index := int64(0); index < length; index++ {
 				name := asciiString(strconv.FormatInt(index, 10))
 				value := r.builtinJSON_reviveWalk(reviver, object, name)
 				if value == _undefined {
@@ -368,8 +368,8 @@ func (ctx *_builtinJSON_stringifyContext) str(key Value, holder *Object) bool {
 			ctx.buf.WriteString(value1.self.getStr("rawJSON", nil).String())
 			return true
 		}
-		for oi := range ctx.stack {
-			if value1.SameAs(ctx.stack[oi]) {
+		for _, object := range ctx.stack {
+			if value1.SameAs(object) {
 				ctx.r.typeErrorResult(true, "Converting circular structure to JSON")
 			}
 		}
@@ -398,6 +398,7 @@ func (ctx *_builtinJSON_stringifyContext) ja(array *Object) {
 	}
 	length := toLength(array.self.getStr("length", nil))
 	if length == 0 {
+		ctx.indent = stepback
 		ctx.buf.WriteString("[]")
 		return
 	}
@@ -412,7 +413,7 @@ func (ctx *_builtinJSON_stringifyContext) ja(array *Object) {
 		separator = ","
 	}
 
-	for i := range length {
+	for i := int64(0); i < length; i++ {
 		if !ctx.str(asciiString(strconv.FormatInt(i, 10)), array) {
 			ctx.buf.WriteString("null")
 		}
@@ -454,18 +455,18 @@ func (ctx *_builtinJSON_stringifyContext) jo(object *Object) {
 	}
 
 	empty := true
-	for ni := range props {
+	for _, name := range props {
 		off := ctx.buf.Len()
 		if !empty {
 			ctx.buf.WriteString(separator)
 		}
-		ctx.quote(props[ni].toString())
+		ctx.quote(name.toString())
 		if ctx.gap != "" {
 			ctx.buf.WriteString(": ")
 		} else {
 			ctx.buf.WriteByte(':')
 		}
-		if ctx.str(props[ni], object) {
+		if ctx.str(name, object) {
 			if empty {
 				empty = false
 			}
@@ -476,6 +477,7 @@ func (ctx *_builtinJSON_stringifyContext) jo(object *Object) {
 
 	if empty {
 		ctx.buf.Truncate(mark)
+		ctx.indent = stepback
 	} else {
 		if ctx.gap != "" {
 			ctx.buf.WriteByte('\n')

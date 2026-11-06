@@ -7,13 +7,14 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/lnksnk/snk/es/parser"
 	"github.com/lnksnk/snk/es/unistring"
 
 	"golang.org/x/text/collate"
 	"golang.org/x/text/language"
 	"golang.org/x/text/unicode/norm"
 )
+
+const WhitespaceChars = " \f\n\r\t\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
 
 func (r *Runtime) collator() *collate.Collator {
 	collator := r._collator
@@ -131,8 +132,8 @@ func (r *Runtime) string_fromcharcode(call FunctionCall) Value {
 
 func (r *Runtime) string_fromcodepoint(call FunctionCall) Value {
 	var sb StringBuilder
-	for ai := range call.Arguments {
-		num := call.Arguments[ai].ToNumber()
+	for _, arg := range call.Arguments {
+		num := arg.ToNumber()
 		var c rune
 		if numInt, ok := num.(valueInt); ok {
 			if numInt < 0 || numInt > utf8.MaxRune {
@@ -140,7 +141,11 @@ func (r *Runtime) string_fromcodepoint(call FunctionCall) Value {
 			}
 			c = rune(numInt)
 		} else {
-			panic(r.newErrorf(r.getRangeError(), "Invalid code point %s", num))
+			f := num.ToFloat()
+			if f != math.Trunc(f) || f < 0 || f > utf8.MaxRune {
+				panic(r.newErrorf(r.getRangeError(), "Invalid code point %s", num))
+			}
+			c = rune(f)
 		}
 		sb.WriteRune(c)
 	}
@@ -240,8 +245,8 @@ func (r *Runtime) stringproto_concat(call FunctionCall) Value {
 		totalLen = u.Length()
 		allAscii = false
 	}
-	for i := range call.Arguments {
-		a, u := devirtualizeString(call.Arguments[i].toString())
+	for i, arg := range call.Arguments {
+		a, u := devirtualizeString(arg.toString())
 		if u != nil {
 			allAscii = false
 			totalLen += u.Length()
@@ -255,8 +260,8 @@ func (r *Runtime) stringproto_concat(call FunctionCall) Value {
 	if allAscii {
 		var buf strings.Builder
 		buf.Grow(toStringLen(totalLen))
-		for si := range strs {
-			buf.WriteString(strs[si].String())
+		for _, s := range strs {
+			buf.WriteString(s.String())
 		}
 		return asciiString(buf.String())
 	}
@@ -264,8 +269,8 @@ func (r *Runtime) stringproto_concat(call FunctionCall) Value {
 	buf := make([]uint16, totalLen+1)
 	buf[0] = unistring.BOM
 	pos := 1
-	for si := range strs {
-		switch s := strs[si].(type) {
+	for _, s := range strs {
+		switch s := s.(type) {
 		case asciiString:
 			for i := 0; i < len(s); i++ {
 				buf[pos] = uint16(s[i])
@@ -300,7 +305,7 @@ func (r *Runtime) stringproto_endsWith(call FunctionCall) Value {
 	if start < 0 {
 		return valueFalse
 	}
-	for i := range searchLength {
+	for i := 0; i < searchLength; i++ {
 		if s.CharAt(start+i) != searchStr.CharAt(i) {
 			return valueFalse
 		}
@@ -467,13 +472,18 @@ func (r *Runtime) stringproto_normalize(call FunctionCall) Value {
 	case asciiString:
 		return s
 	case unicodeString:
-		ss := s.String()
-		return newStringValue(f.String(ss))
+		return s.normalize(f)
 	case *importedString:
 		if s.scanned && s.u == nil {
 			return asciiString(s.s)
 		}
 		return newStringValue(f.String(s.s))
+	case *concatString:
+		a, u := devirtualizeString(s)
+		if u == nil {
+			return a
+		}
+		return u.normalize(f)
 	default:
 		panic(unknownStringTypeErr(s))
 	}
@@ -568,7 +578,7 @@ func (r *Runtime) stringproto_repeat(call FunctionCall) Value {
 	if u == nil {
 		var sb strings.Builder
 		sb.Grow(safeMul(len(a), num))
-		for range num {
+		for i := 0; i < num; i++ {
 			sb.WriteString(string(a))
 		}
 		return asciiString(sb.String())
@@ -576,7 +586,7 @@ func (r *Runtime) stringproto_repeat(call FunctionCall) Value {
 
 	var sb unicodeStringBuilder
 	sb.Grow(safeMul(u.Length(), num))
-	for range num {
+	for i := 0; i < num; i++ {
 		sb.writeUnicodeString(u)
 	}
 	return sb.String()
@@ -605,28 +615,27 @@ func (r *Runtime) stringReplace(s String, found []regexpResult, newstring String
 	lastIndex := 0
 	lengthS := s.Length()
 	if rcall != nil {
-		for i := range found {
-			item := &found[i]
-			if (*item).indexes[0] != lastIndex {
-				buf.WriteSubstring(s, lastIndex, (*item).indexes[0])
+		for _, item := range found {
+			if item.indexes[0] != lastIndex {
+				buf.WriteSubstring(s, lastIndex, item.indexes[0])
 			}
 			matchCount := len(item.indexes) / 2
 			argumentList := make([]Value, matchCount+2, matchCount+3)
-			for index := range matchCount {
+			for index := 0; index < matchCount; index++ {
 				offset := 2 * index
 				if item.indexes[offset] != -1 {
 					if u == nil {
-						argumentList[index] = a[(*item).indexes[offset]:(*item).indexes[offset+1]]
+						argumentList[index] = a[item.indexes[offset]:item.indexes[offset+1]]
 					} else {
-						argumentList[index] = u.Substring((*item).indexes[offset], (*item).indexes[offset+1])
+						argumentList[index] = u.Substring(item.indexes[offset], item.indexes[offset+1])
 					}
 				} else {
 					argumentList[index] = _undefined
 				}
 			}
-			argumentList[matchCount] = intToValue(int64((*item).indexes[0]))
+			argumentList[matchCount] = intToValue(int64(item.indexes[0]))
 			argumentList[matchCount+1] = s
-			groups := r.createRegexpGroupsObj(argumentList[:matchCount], (*item).groups)
+			groups := r.createRegexpGroupsObj(argumentList[:matchCount], item.groups)
 			if groups != nil {
 				argumentList = append(argumentList, groups)
 			}
@@ -635,42 +644,41 @@ func (r *Runtime) stringReplace(s String, found []regexpResult, newstring String
 				Arguments: argumentList,
 			}).toString()
 			buf.WriteString(replacement)
-			lastIndex = (*item).indexes[1]
+			lastIndex = item.indexes[1]
 		}
 	} else {
-		for i := range found {
-			item := &found[i]
-			if (*item).indexes[0] != lastIndex {
-				buf.WriteString(s.Substring(lastIndex, (*item).indexes[0]))
+		for _, item := range found {
+			if item.indexes[0] != lastIndex {
+				buf.WriteString(s.Substring(lastIndex, item.indexes[0]))
 			}
-			matchCount := len((*item).indexes) / 2
+			matchCount := len(item.indexes) / 2
 			var namedGroups map[unistring.String]int
-			writeSubstitution(s, (*item).indexes[0], matchCount, func(idx int) String {
-				if (*item).indexes[idx*2] != -1 {
+			writeSubstitution(s, item.indexes[0], matchCount, func(idx int) String {
+				if item.indexes[idx*2] != -1 {
 					if u == nil {
-						return a[(*item).indexes[idx*2]:item.indexes[idx*2+1]]
+						return a[item.indexes[idx*2]:item.indexes[idx*2+1]]
 					}
-					return u.Substring((*item).indexes[idx*2], (*item).indexes[idx*2+1])
+					return u.Substring(item.indexes[idx*2], item.indexes[idx*2+1])
 				}
 				return stringEmpty
 			}, func(ref String) String {
 				if namedGroups == nil {
-					namedGroups = createRegexpGroupsMap((*item))
+					namedGroups = createRegexpGroupsMap(item)
 				}
 				if len(namedGroups) == 0 {
 					return nil
 				}
 				if idx, exists := namedGroups[ref.string()]; exists {
-					if (*item).indexes[idx] != -1 {
+					if item.indexes[idx] != -1 {
 						if u == nil {
-							return a[(*item).indexes[idx]:(*item).indexes[idx+1]]
+							return a[item.indexes[idx]:item.indexes[idx+1]]
 						}
-						return u.Substring((*item).indexes[idx], (*item).indexes[idx+1])
+						return u.Substring(item.indexes[idx], item.indexes[idx+1])
 					}
 				}
 				return stringEmpty
 			}, newstring, &buf)
-			lastIndex = (*item).indexes[1]
+			lastIndex = item.indexes[1]
 		}
 	}
 
@@ -860,8 +868,8 @@ func (r *Runtime) stringproto_split(call FunctionCall) Value {
 				split = split[:limit]
 			}
 			valueArray = make([]Value, len(split))
-			for index := range split {
-				valueArray[index] = asciiString(split[index])
+			for index, value := range split {
+				valueArray[index] = asciiString(value)
 			}
 		} else {
 			// Unicode separator will never match an ASCII string
@@ -948,7 +956,7 @@ func (r *Runtime) stringproto_startsWith(call FunctionCall) Value {
 	if int64(searchLength+start) > l {
 		return valueFalse
 	}
-	for i := range searchLength {
+	for i := 0; i < searchLength; i++ {
 		if s.CharAt(start+i) != searchStr.CharAt(i) {
 			return valueFalse
 		}
@@ -1043,7 +1051,7 @@ func (r *Runtime) stringproto_trim(call FunctionCall) Value {
 	s := call.This.toString()
 
 	// TODO handle invalid UTF-16
-	return newStringValue(strings.Trim(s.String(), parser.WhitespaceChars))
+	return newStringValue(strings.Trim(s.String(), WhitespaceChars))
 }
 
 func (r *Runtime) stringproto_trimEnd(call FunctionCall) Value {
@@ -1051,7 +1059,7 @@ func (r *Runtime) stringproto_trimEnd(call FunctionCall) Value {
 	s := call.This.toString()
 
 	// TODO handle invalid UTF-16
-	return newStringValue(strings.TrimRight(s.String(), parser.WhitespaceChars))
+	return newStringValue(strings.TrimRight(s.String(), WhitespaceChars))
 }
 
 func (r *Runtime) stringproto_trimStart(call FunctionCall) Value {
@@ -1059,7 +1067,7 @@ func (r *Runtime) stringproto_trimStart(call FunctionCall) Value {
 	s := call.This.toString()
 
 	// TODO handle invalid UTF-16
-	return newStringValue(strings.TrimLeft(s.String(), parser.WhitespaceChars))
+	return newStringValue(strings.TrimLeft(s.String(), WhitespaceChars))
 }
 
 func (r *Runtime) stringproto_substr(call FunctionCall) Value {
@@ -1084,6 +1092,92 @@ func (r *Runtime) stringproto_substr(call FunctionCall) Value {
 	}
 
 	return s.Substring(int(start), int(start+length))
+}
+
+// createHTML implements the CreateHTML abstract operation (B.2.2.2.1). If attribute is not empty, the first
+// argument is used as its value, with any '"' replaced by "&quot;".
+func (r *Runtime) createHTML(call FunctionCall, tag, attribute string) Value {
+	r.checkObjectCoercible(call.This)
+	s := call.This.toString()
+	var sb StringBuilder
+	sb.writeASCII("<")
+	sb.writeASCII(tag)
+	if attribute != "" {
+		v := call.Argument(0).toString()
+		sb.writeASCII(" ")
+		sb.writeASCII(attribute)
+		sb.writeASCII(`="`)
+		start := 0
+		for {
+			idx := v.index(asciiString(`"`), start)
+			if idx < 0 {
+				break
+			}
+			sb.WriteSubstring(v, start, idx)
+			sb.writeASCII("&quot;")
+			start = idx + 1
+		}
+		sb.WriteSubstring(v, start, v.Length())
+		sb.writeASCII(`"`)
+	}
+	sb.writeASCII(">")
+	sb.WriteString(s)
+	sb.writeASCII("</")
+	sb.writeASCII(tag)
+	sb.writeASCII(">")
+	return sb.String()
+}
+
+func (r *Runtime) stringproto_anchor(call FunctionCall) Value {
+	return r.createHTML(call, "a", "name")
+}
+
+func (r *Runtime) stringproto_big(call FunctionCall) Value {
+	return r.createHTML(call, "big", "")
+}
+
+func (r *Runtime) stringproto_blink(call FunctionCall) Value {
+	return r.createHTML(call, "blink", "")
+}
+
+func (r *Runtime) stringproto_bold(call FunctionCall) Value {
+	return r.createHTML(call, "b", "")
+}
+
+func (r *Runtime) stringproto_fixed(call FunctionCall) Value {
+	return r.createHTML(call, "tt", "")
+}
+
+func (r *Runtime) stringproto_fontcolor(call FunctionCall) Value {
+	return r.createHTML(call, "font", "color")
+}
+
+func (r *Runtime) stringproto_fontsize(call FunctionCall) Value {
+	return r.createHTML(call, "font", "size")
+}
+
+func (r *Runtime) stringproto_italics(call FunctionCall) Value {
+	return r.createHTML(call, "i", "")
+}
+
+func (r *Runtime) stringproto_link(call FunctionCall) Value {
+	return r.createHTML(call, "a", "href")
+}
+
+func (r *Runtime) stringproto_small(call FunctionCall) Value {
+	return r.createHTML(call, "small", "")
+}
+
+func (r *Runtime) stringproto_strike(call FunctionCall) Value {
+	return r.createHTML(call, "strike", "")
+}
+
+func (r *Runtime) stringproto_sub(call FunctionCall) Value {
+	return r.createHTML(call, "sub", "")
+}
+
+func (r *Runtime) stringproto_sup(call FunctionCall) Value {
+	return r.createHTML(call, "sup", "")
 }
 
 func (r *Runtime) stringIterProto_next(call FunctionCall) Value {
@@ -1166,7 +1260,20 @@ func createStringProtoTemplate() *objectTemplate {
 	t.putStr("valueOf", func(r *Runtime) Value { return r.methodProp(r.stringproto_valueOf, "valueOf", 0) })
 
 	// Annex B
+	t.putStr("anchor", func(r *Runtime) Value { return r.methodProp(r.stringproto_anchor, "anchor", 1) })
+	t.putStr("big", func(r *Runtime) Value { return r.methodProp(r.stringproto_big, "big", 0) })
+	t.putStr("blink", func(r *Runtime) Value { return r.methodProp(r.stringproto_blink, "blink", 0) })
+	t.putStr("bold", func(r *Runtime) Value { return r.methodProp(r.stringproto_bold, "bold", 0) })
+	t.putStr("fixed", func(r *Runtime) Value { return r.methodProp(r.stringproto_fixed, "fixed", 0) })
+	t.putStr("fontcolor", func(r *Runtime) Value { return r.methodProp(r.stringproto_fontcolor, "fontcolor", 1) })
+	t.putStr("fontsize", func(r *Runtime) Value { return r.methodProp(r.stringproto_fontsize, "fontsize", 1) })
+	t.putStr("italics", func(r *Runtime) Value { return r.methodProp(r.stringproto_italics, "italics", 0) })
+	t.putStr("link", func(r *Runtime) Value { return r.methodProp(r.stringproto_link, "link", 1) })
+	t.putStr("small", func(r *Runtime) Value { return r.methodProp(r.stringproto_small, "small", 0) })
+	t.putStr("strike", func(r *Runtime) Value { return r.methodProp(r.stringproto_strike, "strike", 0) })
+	t.putStr("sub", func(r *Runtime) Value { return r.methodProp(r.stringproto_sub, "sub", 0) })
 	t.putStr("substr", func(r *Runtime) Value { return r.methodProp(r.stringproto_substr, "substr", 2) })
+	t.putStr("sup", func(r *Runtime) Value { return r.methodProp(r.stringproto_sup, "sup", 0) })
 
 	t.putSym(SymIterator, func(r *Runtime) Value {
 		return valueProp(r.newNativeFunc(r.stringproto_iterator, "[Symbol.iterator]", 0), true, false, true)

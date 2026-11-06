@@ -2,7 +2,6 @@ package es
 
 import (
 	"math/big"
-	"strings"
 
 	"github.com/lnksnk/snk/es/ast"
 	"github.com/lnksnk/snk/es/file"
@@ -352,9 +351,9 @@ func (e *compiledIdentifierExpr) emitGetter(putOnStack bool) {
 		}
 	} else {
 		if b != nil {
-			b.emitGetVar(false)
+			b.emitGetVar(false, e.c.scope.strict)
 		} else {
-			e.c.emit(loadDynamic(e.name))
+			e.c.emit(loadDynamic{name: e.name, strict: e.c.scope.strict})
 		}
 		if !putOnStack {
 			e.c.emit(pop)
@@ -369,9 +368,9 @@ func (e *compiledIdentifierExpr) emitGetterOrRef() {
 		b.emitGet()
 	} else {
 		if b != nil {
-			b.emitGetVar(false)
+			b.emitGetVar(false, e.c.scope.strict)
 		} else {
-			e.c.emit(loadDynamicRef(e.name))
+			e.c.emit(loadDynamicRef{name: e.name, strict: e.c.scope.strict})
 		}
 	}
 }
@@ -384,9 +383,9 @@ func (e *compiledIdentifierExpr) emitGetterAndCallee() {
 		b.emitGet()
 	} else {
 		if b != nil {
-			b.emitGetVar(true)
+			b.emitGetVar(true, e.c.scope.strict)
 		} else {
-			e.c.emit(loadDynamicCallee(e.name))
+			e.c.emit(loadDynamicCallee{name: e.name, strict: e.c.scope.strict})
 		}
 	}
 }
@@ -496,25 +495,21 @@ func (e *compiledIdentifierExpr) emitDelete(putOnStack bool) {
 		e.c.throwSyntaxError(e.offset, "Delete of an unqualified identifier in strict mode")
 		panic("Unreachable")
 	}
-	if b, noDynamics := e.c.scope.lookupName(e.name); noDynamics {
-		if b == nil {
-			e.addSrcMap()
-			e.c.emit(deleteGlobal(e.name))
-			if !putOnStack {
-				e.c.emit(pop)
-			}
-			return
+	b, noDynamics := e.c.scope.lookupName(e.name)
+	if !noDynamics {
+		e.addSrcMap()
+		if b != nil {
+			// If a static binding is found but dynamic scopes exist in between, mark the access point so that
+			// finaliseVarAlloc() updates deleteVar.level and deleteVar.exec stops scanning after that number of levels.
+			b.markAccessPoint()
 		}
-	} else {
-		if b == nil {
-			e.addSrcMap()
-			e.c.emit(deleteVar(e.name))
-			if !putOnStack {
-				e.c.emit(pop)
-			}
-			return
+		e.c.emit(&deleteVar{name: e.name})
+		if !putOnStack {
+			e.c.emit(pop)
 		}
+		return
 	}
+	// A statically bound name with no dynamic scopes in between is not deletable.
 	if putOnStack {
 		e.addSrcMap()
 		e.c.emitLiteralValue(valueFalse)
@@ -1287,8 +1282,8 @@ func (e *compiledTemplateLiteral) emitGetter(putOnStack bool) {
 			raw:    raw,
 			cooked: cooked,
 		})
-		for expi := range e.expressions {
-			e.expressions[expi].emitGetter(true)
+		for _, expr := range e.expressions {
+			expr.emitGetter(true)
 		}
 		e.c.emit(call(len(e.expressions) + 1))
 	}
@@ -1374,8 +1369,7 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 	}
 
 	// First, make sure that the first bindings correspond to the formal parameters
-	for i := range e.parameterList.List {
-		item := e.parameterList.List[i]
+	for _, item := range e.parameterList.List {
 		switch tgt := item.Target.(type) {
 		case *ast.Identifier:
 			offset := int(tgt.Idx) - 1
@@ -1418,8 +1412,7 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 
 	// create pattern bindings
 	if hasPatterns {
-		for i := range e.parameterList.List {
-			item := e.parameterList.List[i]
+		for _, item := range e.parameterList.List {
 			switch tgt := item.Target.(type) {
 			case *ast.Identifier:
 				// we already created those in the previous loop, skipping
@@ -1450,8 +1443,7 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 				calleeBinding = b
 			}
 		}
-		for i := range e.parameterList.List {
-			item := e.parameterList.List[i]
+		for i, item := range e.parameterList.List {
 			if pattern, ok := item.Target.(ast.Pattern); ok {
 				i := i
 				e.c.compilePatternInitExpr(func() {
@@ -1501,8 +1493,8 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 				})
 		}
 		if firstForwardRef != -1 {
-			for bi := range s.bindings {
-				s.bindings[bi].inStash = true
+			for _, b := range s.bindings {
+				b.inStash = true
 			}
 			s.argsInStash = true
 			s.needStash = true
@@ -1516,8 +1508,8 @@ func (e *compiledFunctionLiteral) compile() (prg *Program, name unistring.String
 		e.c.compileDeclList(e.declarationList, false)
 		e.c.createFunctionBindings(funcs)
 		e.c.compileLexicalDeclarationsFuncBody(body, calleeBinding)
-		for bi := range varScope.bindings {
-			if b := varScope.bindings[bi]; b.isVar {
+		for _, b := range varScope.bindings {
+			if b.isVar {
 				if parentBinding := s.boundNames[b.name]; parentBinding != nil && parentBinding != calleeBinding {
 					parentBinding.emitGet()
 					b.emitSetP()
@@ -1850,8 +1842,8 @@ func (e *compiledClassLiteral) emitGetter(putOnStack bool) {
 		outer: e.c.classScope,
 	}
 
-	for idx := range e.body {
-		switch elt := e.body[idx].(type) {
+	for idx, elt := range e.body {
+		switch elt := elt.(type) {
 		case *ast.ClassStaticBlock:
 			if len(elt.Block.List) > 0 {
 				staticsCount++
@@ -1936,11 +1928,11 @@ func (e *compiledClassLiteral) emitGetter(putOnStack bool) {
 	// class function
 	// <- sp
 
-	for idx := range e.body {
+	for idx, elt := range e.body {
 		if idx == ctorMethodIdx {
 			continue
 		}
-		switch elt := e.body[idx].(type) {
+		switch elt := elt.(type) {
 		case *ast.ClassStaticBlock:
 			if len(elt.Block.List) > 0 {
 				f := e.c.compileFunctionLiteral(&ast.FunctionLiteral{
@@ -2177,16 +2169,14 @@ func (e *compiledClassLiteral) compileFieldsAndStaticBlocks(elements []clsElemen
 	thisBinding := s.createThisBinding()
 
 	valIdx := 0
-
-	for ei := range elements {
-		elt := &elements[ei]
-		if (*elt).body != nil {
+	for _, elt := range elements {
+		if elt.body != nil {
 			e.c.emit(dup) // this
-			(*elt).body.emitGetter(true)
-			(*elt).body.addSrcMap()
+			elt.body.emitGetter(true)
+			elt.body.addSrcMap()
 			e.c.emit(call(0), pop)
 		} else {
-			if (*elt).computed {
+			if elt.computed {
 				e.c.emit(loadComputedKey(valIdx))
 				valIdx++
 			}
@@ -2199,14 +2189,14 @@ func (e *compiledClassLiteral) compileFieldsAndStaticBlocks(elements []clsElemen
 			} else {
 				e.c.emit(loadUndef)
 			}
-			if (*elt).privateName != nil {
+			if elt.privateName != nil {
 				e.c.emit(&definePrivateProp{
-					idx: (*elt).privateName.idx,
+					idx: elt.privateName.idx,
 				})
-			} else if (*elt).computed {
+			} else if elt.computed {
 				e.c.emit(defineProp{})
 			} else {
-				e.c.emit(definePropKeyed((*elt).key))
+				e.c.emit(definePropKeyed(elt.key))
 			}
 		}
 	}
@@ -2332,8 +2322,8 @@ func (e *compiledNewExpr) emitGetter(putOnStack bool) {
 		e.c.emit(startVariadic)
 	}
 	e.callee.emitGetter(true)
-	for epi := range e.args {
-		e.args[epi].emitGetter(true)
+	for _, expr := range e.args {
+		expr.emitGetter(true)
 	}
 	e.addSrcMap()
 	if e.isVariadic {
@@ -2348,12 +2338,12 @@ func (e *compiledNewExpr) emitGetter(putOnStack bool) {
 
 func (c *compiler) compileCallArgs(list []ast.Expression) (args []compiledExpr, isVariadic bool) {
 	args = make([]compiledExpr, len(list))
-	for i := range list {
-		if spread, ok := list[i].(*ast.SpreadElement); ok {
+	for i, argExpr := range list {
+		if spread, ok := argExpr.(*ast.SpreadElement); ok {
 			args[i] = c.compileSpreadCallArgument(spread)
 			isVariadic = true
 		} else {
-			args[i] = c.compileExpression(list[i])
+			args[i] = c.compileExpression(argExpr)
 		}
 	}
 	return
@@ -2407,7 +2397,7 @@ func (c *compiler) compileMetaProperty(v *ast.MetaProperty) compiledExpr {
 
 func (e *compiledSequenceExpr) emitGetter(putOnStack bool) {
 	if len(e.sequence) > 0 {
-		for i := range len(e.sequence) - 1 {
+		for i := 0; i < len(e.sequence)-1; i++ {
 			e.sequence[i].emitGetter(false)
 		}
 		e.sequence[len(e.sequence)-1].emitGetter(putOnStack)
@@ -2416,8 +2406,8 @@ func (e *compiledSequenceExpr) emitGetter(putOnStack bool) {
 
 func (c *compiler) compileSequenceExpression(v *ast.SequenceExpression) compiledExpr {
 	s := make([]compiledExpr, len(v.Sequence))
-	for i := range v.Sequence {
-		s[i] = c.compileExpression(v.Sequence[i])
+	for i, expr := range v.Sequence {
+		s[i] = c.compileExpression(expr)
 	}
 	r := &compiledSequenceExpr{
 		sequence: s,
@@ -2432,10 +2422,10 @@ func (c *compiler) compileSequenceExpression(v *ast.SequenceExpression) compiled
 
 func (c *compiler) emitThrow(v Value) {
 	if o, ok := v.(*Object); ok {
-		t := nilSafe(o.self.getStr("name", nil)).toString().String()
+		t := unistring.String(nilSafe(o.self.getStr("name", nil)).toString().String())
 		switch t {
 		case "TypeError", "RangeError":
-			c.emit(loadDynamic(t))
+			c.emit(loadDynamic{name: t})
 			msg := o.self.getStr("message", nil)
 			if msg != nil {
 				c.emitLiteralValue(msg)
@@ -2870,8 +2860,8 @@ func (e *compiledObjectLiteral) emitGetter(putOnStack bool) {
 	e.addSrcMap()
 	e.c.emit(newObject)
 	hasProto := false
-	for pi := range e.expr.Value {
-		switch prop := e.expr.Value[pi].(type) {
+	for _, prop := range e.expr.Value {
+		switch prop := prop.(type) {
 		case *ast.PropertyKeyed:
 			key, computed := e.c.processKey(prop.Key)
 			valueExpr := e.c.compileExpression(prop.Value)
@@ -2980,15 +2970,14 @@ func (e *compiledArrayLiteral) emitGetter(putOnStack bool) {
 	hasSpread := false
 	mark := len(e.c.p.code)
 	e.c.emit(nil)
-	for vi := range e.expr.Value {
-		v := &e.expr.Value[vi]
-		if spread, ok := (*v).(*ast.SpreadElement); ok {
+	for _, v := range e.expr.Value {
+		if spread, ok := v.(*ast.SpreadElement); ok {
 			hasSpread = true
 			e.c.compileExpression(spread.Expression).emitGetter(true)
 			e.c.emit(pushArraySpread)
 		} else {
-			if (*v) != nil {
-				e.c.emitExpr(e.c.compileExpression((*v)), true)
+			if v != nil {
+				e.c.emitExpr(e.c.compileExpression(v), true)
 			} else {
 				e.c.emit(loadNil)
 			}
@@ -3084,8 +3073,8 @@ func (e *compiledCallExpr) emitGetter(putOnStack bool) {
 	}
 	calleeName := e.c.emitCallee(e.callee)
 
-	for epi := range e.args {
-		e.args[epi].emitGetter(true)
+	for _, expr := range e.args {
+		expr.emitGetter(true)
 	}
 
 	e.addSrcMap()
@@ -3180,13 +3169,12 @@ func (c *compiler) compileCallee(v ast.Expression) compiledExpr {
 func (c *compiler) compileCallExpression(v *ast.CallExpression) compiledExpr {
 	args := make([]compiledExpr, len(v.ArgumentList))
 	isVariadic := false
-	for i := range v.ArgumentList {
-		argExpr := &v.ArgumentList[i]
-		if spread, ok := (*argExpr).(*ast.SpreadElement); ok {
+	for i, argExpr := range v.ArgumentList {
+		if spread, ok := argExpr.(*ast.SpreadElement); ok {
 			args[i] = c.compileSpreadCallArgument(spread)
 			isVariadic = true
 		} else {
-			args[i] = c.compileExpression((*argExpr))
+			args[i] = c.compileExpression(argExpr)
 		}
 	}
 
@@ -3213,12 +3201,13 @@ func (c *compiler) compileIdentifierExpression(v *ast.Identifier) compiledExpr {
 }
 
 func (c *compiler) compileNumberLiteral(v *ast.NumberLiteral) compiledExpr {
-	if c.scope.strict && len(v.Literal) > 1 && v.Literal[0] == '0' && v.Literal[1] <= '9' && v.Literal[1] >= '0' {
-		if strings.ContainsAny(v.Literal, "89") {
+	if c.scope.strict {
+		switch v.Kind {
+		case ast.NumberLiteralLegacyOctal:
+			c.throwSyntaxError(int(v.Idx)-1, "Octal literals are not allowed in strict mode")
+		case ast.NumberLiteralNonOctalDecimal:
 			c.throwSyntaxError(int(v.Idx)-1, "Decimals with leading zeros are not allowed in strict mode")
 		}
-		c.throwSyntaxError(int(v.Idx)-1, "Octal literals are not allowed in strict mode")
-		panic("Unreachable")
 	}
 	var val Value
 	switch num := v.Value.(type) {
@@ -3240,6 +3229,9 @@ func (c *compiler) compileNumberLiteral(v *ast.NumberLiteral) compiledExpr {
 }
 
 func (c *compiler) compileStringLiteral(v *ast.StringLiteral) compiledExpr {
+	if v.Sloppy && c.scope.strict {
+		c.throwSyntaxError(int(v.Idx)-1, "Octal escape sequences are not allowed in strict mode")
+	}
 	r := &compiledLiteral{
 		val: stringValueFromRaw(v.Value),
 	}
@@ -3253,8 +3245,8 @@ func (c *compiler) compileTemplateLiteral(v *ast.TemplateLiteral) compiledExpr {
 		r.tag = c.compileExpression(v.Tag)
 	}
 	ce := make([]compiledExpr, len(v.Expressions))
-	for i := range v.Expressions {
-		ce[i] = c.compileExpression(v.Expressions[i])
+	for i, expr := range v.Expressions {
+		ce[i] = c.compileExpression(expr)
 	}
 	r.expressions = ce
 	r.elements = v.Elements
@@ -3388,8 +3380,8 @@ func (c *compiler) emitObjectPattern(pattern *ast.ObjectPattern, emitAssign func
 	} else {
 		c.emit(checkObjectCoercible)
 	}
-	for pi := range pattern.Properties {
-		switch prop := pattern.Properties[pi].(type) {
+	for _, prop := range pattern.Properties {
+		switch prop := prop.(type) {
 		case *ast.PropertyShort:
 			c.emit(dup)
 			emitAssign(c.compileIdentifierExpression(&prop.Name), c.compilePatternInitExpr(func() {
@@ -3427,8 +3419,8 @@ func (c *compiler) emitObjectPattern(pattern *ast.ObjectPattern, emitAssign func
 
 func (c *compiler) emitArrayPattern(pattern *ast.ArrayPattern, emitAssign func(target, init compiledExpr), putOnStack bool) {
 	c.emit(iterate)
-	for ei := range pattern.Elements {
-		switch elt := pattern.Elements[ei].(type) {
+	for _, elt := range pattern.Elements {
+		switch elt := elt.(type) {
 		case nil:
 			c.emit(iterGetNextOrUndef{}, pop)
 		case *ast.AssignExpression:

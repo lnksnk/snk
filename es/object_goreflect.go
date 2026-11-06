@@ -192,6 +192,13 @@ func (o *objectGoReflect) init() {
 	}
 }
 
+func (o *objectGoReflect) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	if v := o._get(name.String()); v != nil {
+		return v, true
+	}
+	return o.baseObject.hasAndGetStr(name, receiver)
+}
+
 func (o *objectGoReflect) getStr(name unistring.String, receiver Value) Value {
 	if v := o._get(name.String()); v != nil {
 		return v
@@ -486,13 +493,13 @@ func (o *objectGoReflect) iterateStringKeys() iterNextFunc {
 func (o *objectGoReflect) stringKeys(_ bool, accum []Value) []Value {
 	// all own keys are enumerable
 	if o.fieldsInfo != nil {
-		for ni := range o.fieldsInfo.Names {
-			accum = append(accum, newStringValue(o.fieldsInfo.Names[ni]))
+		for _, name := range o.fieldsInfo.Names {
+			accum = append(accum, newStringValue(name))
 		}
 	}
 
-	for ni := range o.methodsInfo.Names {
-		accum = append(accum, newStringValue(o.methodsInfo.Names[ni]))
+	for _, name := range o.methodsInfo.Names {
+		accum = append(accum, newStringValue(name))
 	}
 
 	return accum
@@ -535,7 +542,7 @@ func (o *objectGoReflect) esValue() Value {
 
 func (r *Runtime) buildFieldInfo(t reflect.Type, index []int, info *reflectFieldsInfo) {
 	n := t.NumField()
-	for i := range n {
+	for i := 0; i < n; i++ {
 		field := t.Field(i)
 		name := field.Name
 		isExported := ast.IsExported(name)
@@ -592,7 +599,7 @@ func (r *Runtime) buildMethodsInfo(t reflect.Type) (info *reflectMethodsInfo) {
 	info = new(reflectMethodsInfo)
 	info.Methods = make(map[string]int, n)
 	info.Names = make([]string, 0, n)
-	for i := range n {
+	for i := 0; i < n; i++ {
 		method := t.Method(i)
 		name := method.Name
 		if !ast.IsExported(name) {

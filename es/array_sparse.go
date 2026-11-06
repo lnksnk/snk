@@ -122,6 +122,12 @@ func (a *sparseArrayObject) getLengthProp() *valueProperty {
 	return &a.lengthProp
 }
 
+// 'length' is recomputed by getOwnPropStr (getLengthProp), so it must be consulted rather than
+// reading the shared (possibly stale) lengthProp directly from the values map.
+func (a *sparseArrayObject) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	return a.hasAndGetOwnStr(name, a.getOwnPropStr(name), receiver)
+}
+
 func (a *sparseArrayObject) getOwnPropStr(name unistring.String) Value {
 	if idx := strToArrayIdx(name); idx != math.MaxUint32 {
 		return a._getIdx(idx)
@@ -257,15 +263,15 @@ func (a *sparseArrayObject) iterateStringKeys() iterNextFunc {
 
 func (a *sparseArrayObject) stringKeys(all bool, accum []Value) []Value {
 	if all {
-		for i := range a.items {
-			accum = append(accum, asciiString(strconv.FormatUint(uint64(a.items[i].idx), 10)))
+		for _, item := range a.items {
+			accum = append(accum, asciiString(strconv.FormatUint(uint64(item.idx), 10)))
 		}
 	} else {
-		for i := range a.items {
-			if prop, ok := a.items[i].value.(*valueProperty); ok && !prop.enumerable {
+		for _, item := range a.items {
+			if prop, ok := item.value.(*valueProperty); ok && !prop.enumerable {
 				continue
 			}
-			accum = append(accum, asciiString(strconv.FormatUint(uint64(a.items[i].idx), 10)))
+			accum = append(accum, asciiString(strconv.FormatUint(uint64(item.idx), 10)))
 		}
 	}
 
@@ -274,11 +280,11 @@ func (a *sparseArrayObject) stringKeys(all bool, accum []Value) []Value {
 
 func (a *sparseArrayObject) setValues(values []Value, objCount int) {
 	a.items = make([]sparseArrayItem, 0, objCount)
-	for i := range values {
-		if values[i] != nil {
+	for i, val := range values {
+		if val != nil {
 			a.items = append(a.items, sparseArrayItem{
 				idx:   uint32(i),
-				value: values[i],
+				value: val,
 			})
 		}
 	}
@@ -436,9 +442,8 @@ func (a *sparseArrayObject) export(ctx *objectExportCtx) interface{} {
 	arr := make([]interface{}, a.length)
 	ctx.put(a.val, arr)
 	var prevIdx uint32
-	for i := range a.items {
-		item := &a.items[i]
-		idx := (*item).idx
+	for _, item := range a.items {
+		idx := item.idx
 		for i := prevIdx; i < idx; i++ {
 			if a.prototype != nil {
 				if v := a.prototype.self.getIdx(valueInt(i), nil); v != nil {
@@ -446,7 +451,7 @@ func (a *sparseArrayObject) export(ctx *objectExportCtx) interface{} {
 				}
 			}
 		}
-		v := (*item).value
+		v := item.value
 		if v != nil {
 			if prop, ok := v.(*valueProperty); ok {
 				v = prop.get(a.val)

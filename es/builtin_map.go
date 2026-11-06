@@ -63,7 +63,7 @@ func (mo *mapObject) export(ctx *objectExportCtx) interface{} {
 	ctx.put(mo.val, m)
 
 	iter := mo.m.newIter()
-	for i := range m {
+	for i := 0; i < len(m); i++ {
 		entry := iter.next()
 		if entry == nil {
 			break
@@ -277,8 +277,8 @@ func (r *Runtime) map_groupBy(call FunctionCall) Value {
 	keys, groups := r.groupBy(call.Argument(0), call.Argument(1), false)
 	o := r.builtin_newMap(nil, r.getMap())
 	mo := o.self.(*mapObject)
-	for i := range keys {
-		mo.m.set(keys[i], r.newArrayValues(groups[i]))
+	for i, key := range keys {
+		mo.m.set(key, r.newArrayValues(groups[i]))
 	}
 	return o
 }

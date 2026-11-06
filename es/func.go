@@ -186,6 +186,10 @@ func (f *funcObject) _addProto(n unistring.String) Value {
 	return nil
 }
 
+func (f *funcObject) hasAndGetStr(name unistring.String, receiver Value) (Value, bool) {
+	return f.hasAndGetOwnStr(name, f.getOwnPropStr(name), receiver)
+}
+
 func (f *funcObject) getStr(p unistring.String, receiver Value) Value {
 	return f.getStrWithOwnProp(f.getOwnPropStr(p), p, receiver)
 }
@@ -268,15 +272,10 @@ func (f *baseJsFuncObject) construct(args []Value, newTarget *Object) *Object {
 	if newTarget == nil {
 		newTarget = f.val
 	}
-	proto := newTarget.self.getStr("prototype", nil)
-	var protoObj *Object
-	if p, ok := proto.(*Object); ok {
-		protoObj = p
-	} else {
-		protoObj = f.val.runtime.global.ObjectPrototype
-	}
+	r := f.val.runtime
+	proto := r.getPrototypeFromCtor(newTarget, nil, r.global.ObjectPrototype)
 
-	obj := f.val.runtime.newBaseObject(protoObj, classObject).val
+	obj := r.newBaseObject(proto, classObject).val
 	ret := f.call(FunctionCall{
 		This:      obj,
 		Arguments: args,
@@ -415,9 +414,9 @@ func (f *baseJsFuncObject) __call(args []Value, newTarget, this Value) (Value, *
 	vm.sp++
 	vm.stack[vm.sp] = this
 	vm.sp++
-	for ai := range args {
-		if args[ai] != nil {
-			vm.stack[vm.sp] = args[ai]
+	for _, arg := range args {
+		if arg != nil {
+			vm.stack[vm.sp] = arg
 		} else {
 			vm.stack[vm.sp] = _undefined
 		}
@@ -613,9 +612,9 @@ func (f *baseJsFuncObject) prepareForVmCall(call FunctionCall) {
 	vm.sp++
 	vm.stack[vm.sp] = f.val
 	vm.sp++
-	for ai := range args {
-		if args[ai] != nil {
-			vm.stack[vm.sp] = args[ai]
+	for _, arg := range args {
+		if arg != nil {
+			vm.stack[vm.sp] = arg
 		} else {
 			vm.stack[vm.sp] = _undefined
 		}

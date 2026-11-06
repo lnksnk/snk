@@ -179,8 +179,8 @@ func exportEntryFromIdentifier(id *ast.Identifier, lex bool) exportEntry {
 
 func exportEntriesFromObjectPattern(op *ast.ObjectPattern, lex bool) []exportEntry {
 	result := make([]exportEntry, 0, len(op.Properties))
-	for pi := range op.Properties {
-		switch p := op.Properties[pi].(type) {
+	for _, p := range op.Properties {
+		switch p := p.(type) {
 		case *ast.PropertyShort:
 			name := p.Name.Name.String()
 			result = append(result, exportEntry{
@@ -202,8 +202,8 @@ func exportEntriesFromObjectPattern(op *ast.ObjectPattern, lex bool) []exportEnt
 
 func exportEntriesFromArrayPattern(op *ast.ArrayPattern, lex bool) []exportEntry {
 	result := make([]exportEntry, 0, len(op.Elements))
-	for pi := range op.Elements {
-		switch p := op.Elements[pi].(type) {
+	for _, p := range op.Elements {
+		switch p := p.(type) {
 		case *ast.ObjectPattern:
 			panic("exported of destructing with object pattern is not supported at this time.")
 		case *ast.ArrayLiteral:
@@ -364,8 +364,8 @@ func exportEntriesFromAst(declarations []*ast.ExportDeclaration) []exportEntry {
 
 func requestedModulesFromAst(statements []ast.Statement) []string {
 	var result []string
-	for si := range statements {
-		switch imp := statements[si].(type) {
+	for _, st := range statements {
+		switch imp := st.(type) {
 		case *ast.ImportDeclaration:
 			if imp.FromClause != nil {
 				result = append(result, imp.FromClause.ModuleSpecifier.String())
@@ -382,9 +382,9 @@ func requestedModulesFromAst(statements []ast.Statement) []string {
 }
 
 func findImportByLocalName(importEntries []importEntry, name string) (importEntry, bool) {
-	for i := range importEntries {
-		if importEntries[i].localName == name {
-			return importEntries[i], true
+	for _, i := range importEntries {
+		if i.localName == name {
+			return i, true
 		}
 	}
 
@@ -420,28 +420,27 @@ func ModuleFromAST(body *ast.Program, resolveModule HostResolveImportedModuleFun
 	var localExportEntries []exportEntry
 	var starExportEntries []exportEntry
 	exportEntries := exportEntriesFromAst(body.ExportEntries)
-	for ei := range exportEntries {
-		ee := &exportEntries[ei]
-		if (*ee).moduleRequest == "" { // technically nil
-			ie, ok := findImportByLocalName(importEntries, (*ee).localName)
+	for _, ee := range exportEntries {
+		if ee.moduleRequest == "" { // technically nil
+			ie, ok := findImportByLocalName(importEntries, ee.localName)
 			if !ok {
-				localExportEntries = append(localExportEntries, (*ee))
+				localExportEntries = append(localExportEntries, ee)
 				continue
 			}
 			if ie.importName == "*" {
-				localExportEntries = append(localExportEntries, (*ee))
+				localExportEntries = append(localExportEntries, ee)
 			} else {
 				indirectExportEntries = append(indirectExportEntries, exportEntry{
 					moduleRequest: ie.moduleRequest,
 					importName:    ie.importName,
-					exportName:    (*ee).exportName,
+					exportName:    ee.exportName,
 				})
 			}
 		} else {
-			if (*ee).importName == "*" && ee.exportName == "" {
-				starExportEntries = append(starExportEntries, (*ee))
+			if ee.importName == "*" && ee.exportName == "" {
+				starExportEntries = append(starExportEntries, ee)
 			} else {
-				indirectExportEntries = append(indirectExportEntries, (*ee))
+				indirectExportEntries = append(indirectExportEntries, ee)
 			}
 		}
 	}
@@ -483,18 +482,18 @@ func ModuleFromAST(body *ast.Program, resolveModule HostResolveImportedModuleFun
 
 func (module *SourceTextModuleRecord) getExportedNamesWithotStars() []string {
 	exportedNames := make([]string, 0, len(module.localExportEntries)+len(module.indirectExportEntries))
-	for ei := range module.localExportEntries {
-		exportedNames = append(exportedNames, module.localExportEntries[ei].exportName)
+	for _, e := range module.localExportEntries {
+		exportedNames = append(exportedNames, e.exportName)
 	}
-	for ei := range module.indirectExportEntries {
-		exportedNames = append(exportedNames, module.indirectExportEntries[ei].exportName)
+	for _, e := range module.indirectExportEntries {
+		exportedNames = append(exportedNames, e.exportName)
 	}
 	return exportedNames
 }
 
 func (module *SourceTextModuleRecord) GetExportedNames(callback func([]string), exportStarSet ...ModuleRecord) bool {
-	for ei := range exportStarSet {
-		if exportStarSet[ei] == module { // better check
+	for _, el := range exportStarSet {
+		if el == module { // better check
 			// TODO assert
 			callback(nil)
 			return true
@@ -502,28 +501,28 @@ func (module *SourceTextModuleRecord) GetExportedNames(callback func([]string), 
 	}
 	exportStarSet = append(exportStarSet, module)
 	var exportedNames []string
-	for ei := range module.localExportEntries {
-		exportedNames = append(exportedNames, module.localExportEntries[ei].exportName)
+	for _, e := range module.localExportEntries {
+		exportedNames = append(exportedNames, e.exportName)
 	}
-	for ei := range module.indirectExportEntries {
-		exportedNames = append(exportedNames, module.indirectExportEntries[ei].exportName)
+	for _, e := range module.indirectExportEntries {
+		exportedNames = append(exportedNames, e.exportName)
 	}
 	if len(module.starExportEntries) == 0 {
 		callback(exportedNames)
 		return true
 	}
 
-	for i := range module.starExportEntries {
-		requestedModule, err := module.hostResolveImportedModule(module, module.starExportEntries[i].moduleRequest)
+	for i, e := range module.starExportEntries {
+		requestedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
 		if err != nil {
 			panic(err)
 		}
 		ch := make(chan struct{})
 		newCallback := func(names []string) {
-			for ni := range names {
-				if names[ni] != "default" {
+			for _, n := range names {
+				if n != "default" {
 					// TODO check if n i exportedNames and don't include it
-					exportedNames = append(exportedNames, names[ni])
+					exportedNames = append(exportedNames, n)
 				}
 			}
 			close(ch)
@@ -545,17 +544,17 @@ func (module *SourceTextModuleRecord) GetExportedNames(callback func([]string), 
 func (module *SourceTextModuleRecord) handleAsyncGeteExportNames(
 	exportedNames []string, remaining []exportEntry, callback func([]string), exportStarSet ...ModuleRecord,
 ) {
-	for ei := range remaining {
-		requestedModule, err := module.hostResolveImportedModule(module, remaining[ei].moduleRequest)
+	for _, e := range remaining {
+		requestedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
 		if err != nil {
 			panic(err)
 		}
 		ch := make(chan struct{})
 		newCallback := func(names []string) {
-			for ni := range names {
-				if names[ni] != "default" {
+			for _, n := range names {
+				if n != "default" {
 					// TODO check if n i exportedNames and don't include it
-					exportedNames = append(exportedNames, names[ni])
+					exportedNames = append(exportedNames, n)
 				}
 			}
 			close(ch)
@@ -608,36 +607,36 @@ func (module *SourceTextModuleRecord) ResolveExport(exportName string, resolvese
 	if exportName == "" {
 		panic("wat")
 	}
-	for ri := range resolveset {
-		if resolveset[ri].Module == module && exportName == resolveset[ri].ExportName { // TODO better
+	for _, r := range resolveset {
+		if r.Module == module && exportName == r.ExportName { // TODO better
 			return nil, false
 		}
 	}
 	resolveset = append(resolveset, ResolveSetElement{Module: module, ExportName: exportName})
-	for ei := range module.localExportEntries {
-		if exportName == module.localExportEntries[ei].exportName {
+	for _, e := range module.localExportEntries {
+		if exportName == e.exportName {
 			// ii. ii. Return ResolvedBinding Record { [[Module]]: module, [[BindingName]]: e.[[LocalName]] }.
 			return &ResolvedBinding{
 				Module:      module,
-				BindingName: module.localExportEntries[ei].localName,
+				BindingName: e.localName,
 			}, false
 		}
 	}
 
-	for ei := range module.indirectExportEntries {
-		if exportName == module.indirectExportEntries[ei].exportName {
-			importedModule, err := module.hostResolveImportedModule(module, module.indirectExportEntries[ei].moduleRequest)
+	for _, e := range module.indirectExportEntries {
+		if exportName == e.exportName {
+			importedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
 			if err != nil {
 				panic(err) // TODO return err
 			}
-			if module.indirectExportEntries[ei].importName == "*" {
+			if e.importName == "*" {
 				// 2. 2. Return ResolvedBinding Record { [[Module]]: importedModule, [[BindingName]]: "*namespace*" }.
 				return &ResolvedBinding{
 					Module:      importedModule,
 					BindingName: "*namespace*",
 				}, false
 			} else {
-				return importedModule.ResolveExport(module.indirectExportEntries[ei].importName, resolveset...)
+				return importedModule.ResolveExport(e.importName, resolveset...)
 			}
 		}
 	}
@@ -648,8 +647,8 @@ func (module *SourceTextModuleRecord) ResolveExport(exportName string, resolvese
 	}
 	var starResolution *ResolvedBinding
 
-	for ei := range module.starExportEntries {
-		importedModule, err := module.hostResolveImportedModule(module, module.starExportEntries[ei].moduleRequest)
+	for _, e := range module.starExportEntries {
+		importedModule, err := module.hostResolveImportedModule(module, e.moduleRequest)
 		if err != nil {
 			panic(err) // TODO return err
 		}

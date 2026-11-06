@@ -540,7 +540,7 @@ func (r *Runtime) typedArrayProto_every(call FunctionCall) Value {
 			This:      call.Argument(1),
 			Arguments: []Value{nil, nil, call.This},
 		}
-		for k := range ta.length {
+		for k := 0; k < ta.length; k++ {
 			if ta.isValidIntegerIndex(k) {
 				fc.Arguments[0] = ta.typedArray.get(ta.offset + k)
 			} else {
@@ -561,6 +561,18 @@ func (r *Runtime) typedArrayProto_fill(call FunctionCall) Value {
 	if ta, ok := r.toObject(call.This).self.(*typedArrayObject); ok {
 		ta.viewedArrayBuf.ensureNotDetached(true)
 		l := int64(ta.length)
+		// Per the spec, the fill value is converted before the start and end index
+		// coercion. The converted value is always a primitive (Number or BigInt),
+		// so converting it further to the element type inside the fill()
+		// implementation cannot have side effects (and thus cannot detach the
+		// buffer in the middle of the fill).
+		var value Value
+		switch ta.typedArray.(type) {
+		case *bigInt64Array, *bigUint64Array:
+			value = toBigInt(call.Argument(0))
+		default:
+			value = call.Argument(0).ToNumber()
+		}
 		k := toIntStrict(relToIdx(call.Argument(1).ToInteger(), l))
 		var relEnd int64
 		if endArg := call.Argument(2); endArg != _undefined {
@@ -569,10 +581,9 @@ func (r *Runtime) typedArrayProto_fill(call FunctionCall) Value {
 			relEnd = l
 		}
 		final := toIntStrict(relToIdx(relEnd, l))
-		value := ta.typedArray.toRaw(call.Argument(0))
 		ta.viewedArrayBuf.ensureNotDetached(true)
-		for ; k < final; k++ {
-			ta.typedArray.setRaw(ta.offset+k, value)
+		if length := final - k; length > 0 {
+			ta.typedArray.fill(value, ta.offset+k, length)
 		}
 		return call.This
 	}
@@ -591,7 +602,7 @@ func (r *Runtime) typedArrayProto_filter(call FunctionCall) Value {
 		buf := make([]byte, 0, ta.length*ta.elemSize)
 		captured := 0
 		rawVal := make([]byte, ta.elemSize)
-		for k := range ta.length {
+		for k := 0; k < ta.length; k++ {
 			if ta.isValidIntegerIndex(k) {
 				fc.Arguments[0] = ta.typedArray.get(ta.offset + k)
 				i := (ta.offset + k) * ta.elemSize
@@ -617,7 +628,7 @@ func (r *Runtime) typedArrayProto_filter(call FunctionCall) Value {
 		} else {
 			ret := r.typedArrayCreate(c, intToValue(int64(captured)))
 			keptTa := kept.self.(*typedArrayObject)
-			for i := range captured {
+			for i := 0; i < captured; i++ {
 				ret.typedArray.set(ret.offset+i, keptTa.typedArray.get(keptTa.offset+i))
 			}
 			return ret.val
@@ -634,7 +645,7 @@ func (r *Runtime) typedArrayProto_find(call FunctionCall) Value {
 			This:      call.Argument(1),
 			Arguments: []Value{nil, nil, call.This},
 		}
-		for k := range ta.length {
+		for k := 0; k < ta.length; k++ {
 			var val Value
 			if ta.isValidIntegerIndex(k) {
 				val = ta.typedArray.get(ta.offset + k)
@@ -658,7 +669,7 @@ func (r *Runtime) typedArrayProto_findIndex(call FunctionCall) Value {
 			This:      call.Argument(1),
 			Arguments: []Value{nil, nil, call.This},
 		}
-		for k := range ta.length {
+		for k := 0; k < ta.length; k++ {
 			if ta.isValidIntegerIndex(k) {
 				fc.Arguments[0] = ta.typedArray.get(ta.offset + k)
 			} else {
@@ -730,7 +741,7 @@ func (r *Runtime) typedArrayProto_forEach(call FunctionCall) Value {
 			This:      call.Argument(1),
 			Arguments: []Value{nil, nil, call.This},
 		}
-		for k := range ta.length {
+		for k := 0; k < ta.length; k++ {
 			var val Value
 			if ta.isValidIntegerIndex(k) {
 				val = ta.typedArray.get(ta.offset + k)
@@ -762,9 +773,6 @@ func (r *Runtime) typedArrayProto_includes(call FunctionCall) Value {
 		}
 
 		searchElement := call.Argument(0)
-		if searchElement == _negativeZero {
-			searchElement = _positiveZero
-		}
 		startIdx := toIntStrict(n)
 		if !ta.viewedArrayBuf.ensureNotDetached(false) {
 			if searchElement == _undefined && startIdx < ta.length {
@@ -772,15 +780,7 @@ func (r *Runtime) typedArrayProto_includes(call FunctionCall) Value {
 			}
 			return valueFalse
 		}
-		if ta.typedArray.typeMatch(searchElement) {
-			se := ta.typedArray.toRaw(searchElement)
-			for k := startIdx; k < ta.length; k++ {
-				if ta.typedArray.getRaw(ta.offset+k) == se {
-					return valueTrue
-				}
-			}
-		}
-		return valueFalse
+		return r.toBoolean(ta.typedArray.includes(searchElement, ta.offset+startIdx, ta.length-startIdx))
 	}
 	panic(r.NewTypeError("Method TypedArray.prototype.includes called on incompatible receiver %s", r.objectproto_toString(FunctionCall{This: call.This})))
 }
@@ -822,17 +822,9 @@ func (r *Runtime) typedArrayProto_indexOf(call FunctionCall) Value {
 		}
 
 		if ta.viewedArrayBuf.ensureNotDetached(false) {
-			searchElement := call.Argument(0)
-			if searchElement == _negativeZero {
-				searchElement = _positiveZero
-			}
-			if !IsNaN(searchElement) && ta.typedArray.typeMatch(searchElement) {
-				se := ta.typedArray.toRaw(searchElement)
-				for k := toIntStrict(n); k < ta.length; k++ {
-					if ta.typedArray.getRaw(ta.offset+k) == se {
-						return intToValue(int64(k))
-					}
-				}
+			start := toIntStrict(n)
+			if idx := ta.typedArray.indexOf(call.Argument(0), ta.offset+start, ta.length-start); idx >= 0 {
+				return intToValue(int64(start + idx))
 			}
 		}
 		return intToValue(-1)
@@ -913,17 +905,9 @@ func (r *Runtime) typedArrayProto_lastIndexOf(call FunctionCall) Value {
 		}
 
 		if ta.viewedArrayBuf.ensureNotDetached(false) {
-			searchElement := call.Argument(0)
-			if searchElement == _negativeZero {
-				searchElement = _positiveZero
-			}
-			if !IsNaN(searchElement) && ta.typedArray.typeMatch(searchElement) {
-				se := ta.typedArray.toRaw(searchElement)
-				for k := toIntStrict(fromIndex); k >= 0; k-- {
-					if ta.typedArray.getRaw(ta.offset+k) == se {
-						return intToValue(int64(k))
-					}
-				}
+			// Search the [0, fromIndex] range backwards.
+			if idx := ta.typedArray.lastIndexOf(call.Argument(0), ta.offset, toIntStrict(fromIndex)+1); idx >= 0 {
+				return intToValue(int64(idx))
 			}
 		}
 
@@ -941,7 +925,7 @@ func (r *Runtime) typedArrayProto_map(call FunctionCall) Value {
 			Arguments: []Value{nil, nil, call.This},
 		}
 		dst := r.typedArraySpeciesCreate(ta, []Value{intToValue(int64(ta.length))})
-		for i := range ta.length {
+		for i := 0; i < ta.length; i++ {
 			if ta.isValidIntegerIndex(i) {
 				fc.Arguments[0] = ta.typedArray.get(ta.offset + i)
 			} else {
@@ -1067,7 +1051,7 @@ func (r *Runtime) typedArrayProto_set(call FunctionCall) Value {
 				srcOffset := src.offset
 				if ta.elemSize == src.elemSize {
 					if curDst <= curSrc || curDst >= endSrc {
-						for i := range srcLen {
+						for i := 0; i < srcLen; i++ {
 							ta.typedArray.set(dstOffset+i, src.typedArray.get(srcOffset+i))
 						}
 					} else {
@@ -1090,7 +1074,7 @@ func (r *Runtime) typedArrayProto_set(call FunctionCall) Value {
 							ta.typedArray.set(dstOffset+i, src.typedArray.get(srcOffset+i))
 						}
 					} else {
-						for i := range x {
+						for i := 0; i < x; i++ {
 							ta.typedArray.set(dstOffset+i, src.typedArray.get(srcOffset+i))
 						}
 						for i := srcLen - 1; i >= x; i-- {
@@ -1105,7 +1089,7 @@ func (r *Runtime) typedArrayProto_set(call FunctionCall) Value {
 			if x := srcLen + targetOffset; x < 0 || x > targetLen {
 				panic(r.newError(r.getRangeError(), "Source is too large"))
 			}
-			for i := range srcLen {
+			for i := 0; i < srcLen; i++ {
 				val := nilSafe(srcObj.self.getIdx(valueInt(i), nil))
 				if ta.isValidIntegerIndex(targetOffset + i) {
 					ta.typedArray.set(ta.offset+targetOffset+i, val)
@@ -1149,13 +1133,13 @@ func (r *Runtime) typedArrayProto_slice(call FunctionCall) Value {
 					copy(dstBuf, srcBuf)
 				} else {
 					// Slices overlap forward, cannot just use copy() here because it's too smart
-					for i := range byteCount {
+					for i := 0; i < byteCount; i++ {
 						dstBuf[i] = srcBuf[i]
 					}
 				}
 			}
 		} else {
-			for i := range count {
+			for i := 0; i < count; i++ {
 				ta.viewedArrayBuf.ensureNotDetached(true)
 				dst.typedArray.set(dst.offset+i, ta.typedArray.get(ta.offset+start+i))
 			}
@@ -1173,7 +1157,7 @@ func (r *Runtime) typedArrayProto_some(call FunctionCall) Value {
 			This:      call.Argument(1),
 			Arguments: []Value{nil, nil, call.This},
 		}
-		for k := range ta.length {
+		for k := 0; k < ta.length; k++ {
 			if ta.isValidIntegerIndex(k) {
 				fc.Arguments[0] = ta.typedArray.get(ta.offset + k)
 			} else {
@@ -1233,7 +1217,7 @@ func (r *Runtime) typedArrayProto_toLocaleString(call FunctionCall) Value {
 	if ta, ok := r.toObject(call.This).self.(*typedArrayObject); ok {
 		length := ta.length
 		var buf StringBuilder
-		for i := range length {
+		for i := 0; i < length; i++ {
 			ta.viewedArrayBuf.ensureNotDetached(true)
 			if i > 0 {
 				buf.WriteRune(',')
@@ -1310,7 +1294,7 @@ func (r *Runtime) typedArrayProto_toReversed(call FunctionCall) Value {
 
 	a := r.typedArrayCreate(ta.defaultCtor, intToValue(int64(length)))
 
-	for k := range length {
+	for k := 0; k < length; k++ {
 		from := length - k - 1
 		fromValue := ta.typedArray.get(ta.offset + from)
 		a.typedArray.set(k, fromValue)
@@ -1364,31 +1348,33 @@ func (r *Runtime) typedArray_from(call FunctionCall) Value {
 	if mapFn := call.Argument(1); mapFn != _undefined {
 		mapFc = r.toCallable(mapFn)
 	}
-	source := r.toObject(call.Argument(0))
-	usingIter := toMethod(source.self.getSym(SymIterator, nil))
+	items := call.Argument(0)
+	usingIter := toMethod(r.getV(items, SymIterator))
 	if usingIter != nil {
-		values := r.iterableToList(source, usingIter)
+		values := r.iterableToList(items, usingIter)
 		ta := r.typedArrayCreate(c, intToValue(int64(len(values))))
 		if mapFc == nil {
-			for idx := range values {
-				ta.typedArray.set(idx, values[idx])
+			for idx, val := range values {
+				ta.typedArray.set(idx, val)
 			}
 		} else {
 			fc := FunctionCall{
 				This:      thisValue,
 				Arguments: []Value{nil, nil},
 			}
-			for idx := range values {
-				fc.Arguments[0], fc.Arguments[1] = values[idx], intToValue(int64(idx))
-				ta._putIdx(idx, mapFc(fc))
+			for idx, val := range values {
+				fc.Arguments[0], fc.Arguments[1] = val, intToValue(int64(idx))
+				val = mapFc(fc)
+				ta._putIdx(idx, val)
 			}
 		}
 		return ta.val
 	}
+	source := items.ToObject(r)
 	length := toIntStrict(toLength(source.self.getStr("length", nil)))
 	ta := r.typedArrayCreate(c, intToValue(int64(length)))
 	if mapFc == nil {
-		for i := range length {
+		for i := 0; i < length; i++ {
 			ta.typedArray.set(i, nilSafe(source.self.getIdx(valueInt(i), nil)))
 		}
 	} else {
@@ -1396,7 +1382,7 @@ func (r *Runtime) typedArray_from(call FunctionCall) Value {
 			This:      thisValue,
 			Arguments: []Value{nil, nil},
 		}
-		for i := range length {
+		for i := 0; i < length; i++ {
 			idx := valueInt(i)
 			fc.Arguments[0], fc.Arguments[1] = source.self.getIdx(idx, nil), idx
 			ta.typedArray.set(i, mapFc(fc))
@@ -1407,8 +1393,8 @@ func (r *Runtime) typedArray_from(call FunctionCall) Value {
 
 func (r *Runtime) typedArray_of(call FunctionCall) Value {
 	ta := r.typedArrayCreate(r.toObject(call.This), intToValue(int64(len(call.Arguments))))
-	for i := range call.Arguments {
-		ta.typedArray.set(i, call.Arguments[i])
+	for i, val := range call.Arguments {
+		ta.typedArray.set(i, val)
 	}
 	return ta.val
 }
@@ -1455,8 +1441,8 @@ func (r *Runtime) typedArrayFrom(ctor, items *Object, mapFn, thisValue Value, ta
 		values := r.iterableToList(items, usingIter)
 		ta := r.allocateTypedArray(ctor, len(values), taCtor, proto)
 		if mapFc == nil {
-			for idx := range values {
-				ta.typedArray.set(idx, values[idx])
+			for idx, val := range values {
+				ta.typedArray.set(idx, val)
 			}
 		} else {
 			fc := FunctionCall{
@@ -1465,7 +1451,8 @@ func (r *Runtime) typedArrayFrom(ctor, items *Object, mapFn, thisValue Value, ta
 			}
 			for idx, val := range values {
 				fc.Arguments[0], fc.Arguments[1] = val, intToValue(int64(idx))
-				ta.typedArray.set(idx, mapFc(fc))
+				val = mapFc(fc)
+				ta.typedArray.set(idx, val)
 			}
 		}
 		return ta.val
@@ -1473,7 +1460,7 @@ func (r *Runtime) typedArrayFrom(ctor, items *Object, mapFn, thisValue Value, ta
 	length := toIntStrict(toLength(items.self.getStr("length", nil)))
 	ta := r.allocateTypedArray(ctor, length, taCtor, proto)
 	if mapFc == nil {
-		for i := range length {
+		for i := 0; i < length; i++ {
 			ta.typedArray.set(i, nilSafe(items.self.getIdx(valueInt(i), nil)))
 		}
 	} else {
@@ -1481,7 +1468,7 @@ func (r *Runtime) typedArrayFrom(ctor, items *Object, mapFn, thisValue Value, ta
 			This:      thisValue,
 			Arguments: []Value{nil, nil},
 		}
-		for i := range length {
+		for i := 0; i < length; i++ {
 			idx := valueInt(i)
 			fc.Arguments[0], fc.Arguments[1] = items.self.getIdx(idx, nil), idx
 			ta.typedArray.set(i, mapFc(fc))
@@ -1545,7 +1532,7 @@ func (r *Runtime) _newTypedArrayFromTypedArray(src *typedArrayObject, newTarget 
 		checkTypedArrayMixBigInt(src.defaultCtor, newTarget)
 	}
 	dst.length = l
-	for i := range l {
+	for i := 0; i < l; i++ {
 		dst.typedArray.set(i, src.typedArray.get(src.offset+i))
 	}
 	return dst.val

@@ -256,14 +256,14 @@ func (b *binding) emitInitPAtScope(scope *scope, pos int) {
 	}
 }
 
-func (b *binding) emitGetVar(callee bool) {
+func (b *binding) emitGetVar(callee bool, strict bool) {
 	b.markAccessPoint()
 	if b.getIndirect != nil {
 		b.scope.c.emit(loadIndirect(b.getIndirect))
 	} else if b.isVar && !b.isArg {
-		b.scope.c.emit(&loadMixed{name: b.name, callee: callee})
+		b.scope.c.emit(&loadMixed{name: b.name, callee: callee, strict: strict})
 	} else {
-		b.scope.c.emit(&loadMixedLex{name: b.name, callee: callee})
+		b.scope.c.emit(&loadMixedLex{name: b.name, callee: callee, strict: strict})
 	}
 }
 
@@ -453,10 +453,10 @@ func (p *Program) _dumpCode(indent string, logger func(format string, args ...in
 		initFields._dumpCode(i, logger)
 		logger("%s ----", i)
 	}
-	for pc := range p.code {
-		logger("%s %d: %T(%v)", indent, pc, p.code[pc], p.code[pc])
+	for pc, ins := range p.code {
+		logger("%s %d: %T(%v)", indent, pc, ins, ins)
 		var prg *Program
-		switch f := p.code[pc].(type) {
+		switch f := ins.(type) {
 		case newFuncInstruction:
 			prg = f.getPrg()
 		case *newDerivedClass:
@@ -645,8 +645,7 @@ func (s *scope) finaliseVarAlloc(stackOffset int) (stashSize, stackSize int) {
 	if fs := s.nearestThis(); fs != nil && fs.funcType == funcDerivedCtor {
 		derivedCtor = true
 	}
-	for i := range s.bindings {
-		b := s.bindings[i]
+	for i, b := range s.bindings {
 		var this bool
 		if b.name == thisBindingName {
 			this = true
@@ -739,6 +738,8 @@ func (s *scope) finaliseVarAlloc(stackOffset int) (stashSize, stackSize int) {
 							i.idx = idx
 						case loadIndirect:
 							// nothing needs to be changed in this case
+						case *deleteVar:
+							i.level = uint8(level)
 						default:
 							s.c.assert(false, s.c.p.sourceOffset(pc), "Unsupported instruction for binding: %T", i)
 						}
@@ -787,7 +788,9 @@ func (s *scope) finaliseVarAlloc(stackOffset int) (stashSize, stackSize int) {
 								s.c.assert(false, s.c.p.sourceOffset(pc), "Unsupported instruction for 'this'")
 							}
 						}
-					}
+					} /*else {
+						no-op
+					}*/
 				} else if argsInStash {
 					for _, pc := range *aps {
 						ap := &code[base+pc]
@@ -809,11 +812,13 @@ func (s *scope) finaliseVarAlloc(stackOffset int) (stashSize, stackSize int) {
 						case initStack:
 							*ap = initStack1(idx)
 						case *loadMixed:
-							*ap = &loadMixedStack1{name: i.name, idx: idx, level: uint8(level), callee: i.callee}
+							*ap = &loadMixedStack1{name: i.name, idx: idx, level: uint8(level), callee: i.callee, strict: i.strict}
 						case *loadMixedLex:
-							*ap = &loadMixedStack1Lex{name: i.name, idx: idx, level: uint8(level), callee: i.callee}
+							*ap = &loadMixedStack1Lex{name: i.name, idx: idx, level: uint8(level), callee: i.callee, strict: i.strict}
 						case *resolveMixed:
 							*ap = &resolveMixedStack1{typ: i.typ, name: i.name, idx: idx, level: uint8(level), strict: i.strict}
+						case *deleteVar:
+							i.level = uint8(level)
 						default:
 							s.c.assert(false, s.c.p.sourceOffset(pc), "Unsupported instruction for binding: %T", i)
 						}
@@ -839,11 +844,13 @@ func (s *scope) finaliseVarAlloc(stackOffset int) (stashSize, stackSize int) {
 						case initStackP:
 							*ap = initStackP(idx)
 						case *loadMixed:
-							*ap = &loadMixedStack{name: i.name, idx: idx, level: uint8(level), callee: i.callee}
+							*ap = &loadMixedStack{name: i.name, idx: idx, level: uint8(level), callee: i.callee, strict: i.strict}
 						case *loadMixedLex:
-							*ap = &loadMixedStackLex{name: i.name, idx: idx, level: uint8(level), callee: i.callee}
+							*ap = &loadMixedStackLex{name: i.name, idx: idx, level: uint8(level), callee: i.callee, strict: i.strict}
 						case *resolveMixed:
 							*ap = &resolveMixedStack{typ: i.typ, name: i.name, idx: idx, level: uint8(level), strict: i.strict}
+						case *deleteVar:
+							i.level = uint8(level)
 						default:
 							s.c.assert(false, s.c.p.sourceOffset(pc), "Unsupported instruction for binding: %T", i)
 						}
@@ -980,15 +987,15 @@ func (c *compiler) compileModule(module *SourceTextModuleRecord) {
 		extensible:  true,
 		adjustStack: true,
 	})
-	for in := range module.indirectExportEntries {
-		v, ambiguous := module.ResolveExport(module.indirectExportEntries[in].exportName)
+	for _, in := range module.indirectExportEntries {
+		v, ambiguous := module.ResolveExport(in.exportName)
 		if v == nil || ambiguous {
-			c.compileImportError(ambiguous, module.indirectExportEntries[in].moduleRequest, module.indirectExportEntries[in].exportName, module.indirectExportEntries[in].offset)
+			c.compileImportError(ambiguous, in.moduleRequest, in.exportName, in.offset)
 		}
 	}
 
-	for in := range module.importEntries {
-		c.compileImportEntry(module.importEntries[in])
+	for _, in := range module.importEntries {
+		c.compileImportEntry(in)
 	}
 	funcs := c.extractFunctions(in.Body)
 	c.createFunctionBindings(funcs)
@@ -1009,16 +1016,16 @@ func (c *compiler) compileModule(module *SourceTextModuleRecord) {
 		enter = &enterBlock{}
 		c.emit(enter)
 	}
-	for epi := range in.Body {
-		if imp, ok := in.Body[epi].(*ast.ImportDeclaration); ok {
+	for _, exp := range in.Body {
+		if imp, ok := exp.(*ast.ImportDeclaration); ok {
 			c.compileImportDeclaration(imp)
 		}
 	}
-	for ei := range module.localExportEntries {
-		c.compileLocalExportEntry(module.localExportEntries[ei])
+	for _, entry := range module.localExportEntries {
+		c.compileLocalExportEntry(entry)
 	}
-	for ei := range module.indirectExportEntries {
-		c.compileIndirectExportEntry(module.indirectExportEntries[ei])
+	for _, entry := range module.indirectExportEntries {
+		c.compileIndirectExportEntry(entry)
 	}
 
 	c.compileFunctions(funcs)
@@ -1252,9 +1259,9 @@ func (c *compiler) extractLabelled(st ast.Statement) ast.Statement {
 }
 
 func (c *compiler) extractFunctions(list []ast.Statement) (funcs []*ast.FunctionDeclaration) {
-	for sti := range list {
+	for _, st := range list {
 		var decl *ast.FunctionDeclaration
-		switch st := c.extractLabelled(list[sti]).(type) {
+		switch st := c.extractLabelled(st).(type) {
 		case *ast.FunctionDeclaration:
 			decl = st
 		case *ast.LabelledStatement:
@@ -1360,8 +1367,8 @@ func (c *compiler) createBindings(target ast.Expression, createIdBinding func(na
 	case *ast.Identifier:
 		createIdBinding(target.Name, int(target.Idx)-1)
 	case *ast.ObjectPattern:
-		for pi := range target.Properties {
-			switch prop := target.Properties[pi].(type) {
+		for _, prop := range target.Properties {
+			switch prop := prop.(type) {
 			case *ast.PropertyShort:
 				createIdBinding(prop.Name.Name, int(prop.Name.Idx)-1)
 			case *ast.PropertyKeyed:
@@ -1374,9 +1381,9 @@ func (c *compiler) createBindings(target ast.Expression, createIdBinding func(na
 			c.createBindings(target.Rest, createIdBinding)
 		}
 	case *ast.ArrayPattern:
-		for ei := range target.Elements {
-			if target.Elements[ei] != nil {
-				c.createBindings(target.Elements[ei], createIdBinding)
+		for _, elt := range target.Elements {
+			if elt != nil {
+				c.createBindings(elt, createIdBinding)
 			}
 		}
 		if target.Rest != nil {
@@ -1457,8 +1464,8 @@ func (c *compiler) compileLexicalDeclarations(list []ast.Statement, scopeDeclare
 			scopeDeclared = true
 		}
 	}
-	for si := range list {
-		switch lex := list[si].(type) {
+	for _, st := range list {
+		switch lex := st.(type) {
 		case *ast.LexicalDeclaration:
 			declareScope()
 			c.createLexicalBindings(lex)
@@ -1495,15 +1502,15 @@ func (c *compiler) compileLexicalDeclarations(list []ast.Statement, scopeDeclare
 }
 
 func (c *compiler) compileLexicalDeclarationsFuncBody(list []ast.Statement, calleeBinding *binding) {
-	for si := range list {
-		if lex, ok := list[si].(*ast.LexicalDeclaration); ok {
+	for _, st := range list {
+		if lex, ok := st.(*ast.LexicalDeclaration); ok {
 			isConst := lex.Token == token.CONST
 			for _, d := range lex.List {
 				c.createBindings(d.Target, func(name unistring.String, offset int) {
 					c.createLexicalIdBindingFuncBody(name, isConst, offset, calleeBinding)
 				})
 			}
-		} else if cls, ok := list[si].(*ast.ClassDeclaration); ok {
+		} else if cls, ok := st.(*ast.ClassDeclaration); ok {
 			c.createLexicalIdBindingFuncBody(cls.Class.Name.Name, false, int(cls.Class.Name.Idx)-1, calleeBinding)
 		}
 	}
@@ -1562,8 +1569,8 @@ func (c *compiler) throwSyntaxErrorf(offset int, format string, args ...interfac
 }
 
 func (c *compiler) isStrict(list []ast.Statement) *ast.StringLiteral {
-	for si := range list {
-		if st, ok := list[si].(*ast.ExpressionStatement); ok {
+	for _, st := range list {
+		if st, ok := st.(*ast.ExpressionStatement); ok {
 			if e, ok := st.Expression.(*ast.StringLiteral); ok {
 				if e.Literal == `"use strict"` || e.Literal == `'use strict'` {
 					return e

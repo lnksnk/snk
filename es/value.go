@@ -809,6 +809,13 @@ func (o *Object) Get(name string) Value {
 	return o.self.getStr(unistring.NewFromString(name), nil)
 }
 
+// GetIdx returns an object's property by a numeric key. This is mostly useful if the object is an Array to avoid
+// converting the index into a string.
+// This method will panic with an *Exception if a JavaScript exception is thrown in the process. Use Runtime.Try to catch these.
+func (o *Object) GetIdx(idx int64) Value {
+	return o.self.getIdx(valueInt(idx), nil)
+}
+
 // GetSymbol returns the value of a symbol property. Use one of the Sym* values for well-known
 // symbols (such as SymIterator, SymToStringTag, etc...).
 // This method will panic with an *Exception if a JavaScript exception is thrown in the process. Use Runtime.Try to catch these.
@@ -845,8 +852,8 @@ func (o *Object) GetOwnPropertyNames() (keys []string) {
 func (o *Object) Symbols() []*Symbol {
 	symbols := o.self.symbols(false, nil)
 	ret := make([]*Symbol, len(symbols))
-	for i := range symbols {
-		ret[i], _ = symbols[i].(*Symbol)
+	for i, sym := range symbols {
+		ret[i], _ = sym.(*Symbol)
 	}
 	return ret
 }
@@ -1204,7 +1211,7 @@ func typeErrorResult(throw bool, args ...interface{}) {
 }
 
 func init() {
-	for i := range 256 {
+	for i := 0; i < 256; i++ {
 		intCache[i] = valueInt(i - 256)
 	}
 }

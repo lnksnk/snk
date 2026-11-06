@@ -38,13 +38,13 @@ func (r *Runtime) createNamespaceObject(m ModuleRecord) *namespaceObject {
 	no.init()
 	no.exports = make(map[unistring.String]struct{})
 	m.GetExportedNames(func(names []string) {
-		for eni := range names {
-			v, ambiguous := no.m.ResolveExport(names[eni])
+		for _, exportName := range names {
+			v, ambiguous := no.m.ResolveExport(exportName)
 			if ambiguous || v == nil {
 				continue
 			}
-			no.exports[unistring.NewFromString(names[eni])] = struct{}{}
-			no.exportsNames = append(no.exportsNames, unistring.NewFromString(names[eni]))
+			no.exports[unistring.NewFromString(exportName)] = struct{}{}
+			no.exportsNames = append(no.exportsNames, unistring.NewFromString(exportName))
 		}
 	})
 	return no

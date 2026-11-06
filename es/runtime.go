@@ -154,6 +154,8 @@ type global struct {
 	stringproto_trimEnd   *Object
 	stringproto_trimStart *Object
 
+	dateproto_toUTCString *Object
+
 	parseFloat, parseInt *Object
 
 	typedArrayValues *Object
@@ -380,9 +382,9 @@ func (e *InterruptedError) Error() string {
 }
 
 func (e *Exception) writeFullStack(b *bytes.Buffer) {
-	for fi := range e.stack {
+	for _, frame := range e.stack {
 		b.WriteString("\tat ")
-		e.stack[fi].Write(b)
+		frame.Write(b)
 		b.WriteByte('\n')
 	}
 }
@@ -546,8 +548,8 @@ func (r *Runtime) CreateObject(proto *Object) *Object {
 
 func (r *Runtime) NewArray(items ...interface{}) *Object {
 	values := make([]Value, len(items))
-	for i := range items {
-		values[i] = r.ToValue(items[i])
+	for i, item := range items {
+		values[i] = r.ToValue(item)
 	}
 	return r.newArrayValues(values)
 }
@@ -880,11 +882,11 @@ func (r *Runtime) builtin_Number(call FunctionCall) Value {
 		case *Object:
 			primValue := t.toPrimitiveNumber()
 			if bigint, ok := primValue.(*valueBigInt); ok {
-				return intToValue((*big.Int)(bigint).Int64())
+				return bigint.numberValue()
 			}
 			return primValue.ToNumber()
 		case *valueBigInt:
-			return intToValue((*big.Int)(t).Int64())
+			return t.numberValue()
 		default:
 			return t.ToNumber()
 		}
@@ -900,12 +902,12 @@ func (r *Runtime) builtin_newNumber(args []Value, proto *Object) *Object {
 		case *Object:
 			primValue := t.toPrimitiveNumber()
 			if bigint, ok := primValue.(*valueBigInt); ok {
-				v = intToValue((*big.Int)(bigint).Int64())
+				v = bigint.numberValue()
 			} else {
 				v = primValue.ToNumber()
 			}
 		case *valueBigInt:
-			v = intToValue((*big.Int)(t).Int64())
+			v = t.numberValue()
 		default:
 			v = t.ToNumber()
 		}
@@ -1709,7 +1711,17 @@ invalid characters).
 
 # Nil
 
-Nil is converted to null.
+Nil is converted to null. This includes nil pointers, nil interfaces, nil slices, and nil functions. Note that they lose
+their type as a result and exported as plain nil interface (nil type and nil value).
+
+# Pointers
+
+Pointers are de-referenced and the referenced object dictates the shape of the Value. The Value keeps referring to the
+same object, so any changes made to it will be reflected. If the referenced value is a nil map without methods, setting
+a property creates a map. Same applies to slices.
+
+Note, the indirection only goes one level, i.e. a pointer to a pointer becomes a generic empty Object. As with any
+Object wrapper it can have Symbol properties, but no string or index properties. It exports to the original pointer value.
 
 # Functions
 
@@ -1978,7 +1990,7 @@ func (r *Runtime) toValue(i interface{}, origValue reflect.Value) Value {
 	}
 
 	value := origValue
-	for value.Kind() == reflect.Ptr {
+	if value.Kind() == reflect.Pointer {
 		value = value.Elem()
 	}
 
@@ -1988,7 +2000,7 @@ func (r *Runtime) toValue(i interface{}, origValue reflect.Value) Value {
 
 	switch value.Kind() {
 	case reflect.Map:
-		if value.IsNil() {
+		if value.IsNil() && !value.CanSet() {
 			return _null
 		}
 		if value.Type().NumMethod() == 0 {
@@ -2028,6 +2040,9 @@ func (r *Runtime) toValue(i interface{}, origValue reflect.Value) Value {
 		obj.self = a
 		return obj
 	case reflect.Slice:
+		if value.IsNil() && !value.CanSet() {
+			return _null
+		}
 		obj := &Object{runtime: r}
 		a := &objectGoSliceReflect{
 			objectGoArrayReflect: objectGoArrayReflect{
@@ -2086,7 +2101,7 @@ func (r *Runtime) wrapReflectFunc(value reflect.Value) func(FunctionCall) Value 
 			in = make([]reflect.Value, l)
 		}
 
-		for i := range call.Arguments {
+		for i, a := range call.Arguments {
 			var t reflect.Type
 
 			n := i
@@ -2103,7 +2118,7 @@ func (r *Runtime) wrapReflectFunc(value reflect.Value) func(FunctionCall) Value 
 			}
 
 			v := reflect.New(t).Elem()
-			err := r.toReflectValue(call.Arguments[i], v, &objectExportCtx{})
+			err := r.toReflectValue(a, v, &objectExportCtx{})
 			if err != nil {
 				panic(r.NewTypeError("could not convert function call parameter %d: %v", i, err))
 			}
@@ -2136,8 +2151,8 @@ func (r *Runtime) wrapReflectFunc(value reflect.Value) func(FunctionCall) Value 
 			return r.ToValue(out[0].Interface())
 		default:
 			s := make([]interface{}, len(out))
-			for i := range out {
-				s[i] = out[i].Interface()
+			for i, v := range out {
+				s[i] = v.Interface()
 			}
 
 			return r.ToValue(s)
@@ -2284,7 +2299,7 @@ func (r *Runtime) toReflectValue(v Value, dst reflect.Value, ctx *objectExportCt
 			}
 			s := dst
 			ctx.putTyped(o, t, s.Addr().Interface())
-			for i := range typ.NumField() {
+			for i := 0; i < typ.NumField(); i++ {
 				field := typ.Field(i)
 				if ast.IsExported(field.Name) {
 					name := field.Name
@@ -2337,10 +2352,10 @@ func (r *Runtime) wrapJSFunc(fn Callable, typ reflect.Type) func(args []reflect.
 				varArg := args[len(args)-1]
 				args = args[:len(args)-1]
 				jsArgs = make([]Value, 0, len(args)+varArg.Len())
-				for ai := range args {
-					jsArgs = append(jsArgs, r.ToValue(args[ai].Interface()))
+				for _, arg := range args {
+					jsArgs = append(jsArgs, r.ToValue(arg.Interface()))
 				}
-				for i := range varArg.Len() {
+				for i := 0; i < varArg.Len(); i++ {
 					jsArgs = append(jsArgs, r.ToValue(varArg.Index(i).Interface()))
 				}
 			} else {
@@ -2381,8 +2396,8 @@ func (r *Runtime) wrapJSFunc(fn Callable, typ reflect.Type) func(args []reflect.
 			}
 		}
 
-		for i := range results {
-			if !results[i].IsValid() {
+		for i, v := range results {
+			if !v.IsValid() {
 				results[i] = reflect.Zero(typ.Out(i))
 			}
 		}
@@ -2500,7 +2515,7 @@ func (r *Runtime) Set(name string, value interface{}) error {
 // This method will panic with an *Exception if a JavaScript exception is thrown in the process. Use Runtime.Try to catch these.
 func (r *Runtime) Get(name string) Value {
 	n := unistring.NewFromString(name)
-	if v, exists := r.global.stash.getByName(n); exists {
+	if v, exists := r.global.stash.getByName(n, false); exists {
 		return v
 	} else {
 		return r.globalObject.self.getStr(n, nil)
@@ -3066,8 +3081,8 @@ func (r *Runtime) leave() {
 	var jobs []func()
 	for len(r.jobQueue) > 0 {
 		jobs, r.jobQueue = r.jobQueue, jobs[:0]
-		for ji := range jobs {
-			jobs[ji]()
+		for _, job := range jobs {
+			job()
 		}
 	}
 	r.jobQueue = nil
@@ -3220,7 +3235,7 @@ func strToArrayIdx(s unistring.String) uint32 {
 	var n uint32
 	if l < 10 {
 		// guaranteed not to overflow
-		for i := range len(s) {
+		for i := 0; i < len(s); i++ {
 			c := s[i]
 			if c < '0' || c > '9' {
 				return math.MaxUint32
@@ -3237,7 +3252,7 @@ func strToArrayIdx(s unistring.String) uint32 {
 	if c9 < '0' || c9 > '9' {
 		return math.MaxUint32
 	}
-	for i := range 9 {
+	for i := 0; i < 9; i++ {
 		c := s[i]
 		if c < '0' || c > '9' {
 			return math.MaxUint32
@@ -3291,7 +3306,7 @@ func strToInt32(s unistring.String) (int32, bool) {
 				// guaranteed to overflow
 				return -1, false
 			}
-			for i := range 9 {
+			for i := 0; i < 9; i++ {
 				c := s[i]
 				if c < '0' || c > '9' {
 					return -1, false
@@ -3331,7 +3346,7 @@ func strToInt64(s unistring.String) (int64, bool) {
 	var n uint64
 	if l < 19 {
 		// guaranteed not to overflow
-		for i := range len(s) {
+		for i := 0; i < len(s); i++ {
 			c := s[i]
 			if c < '0' || c > '9' {
 				return -1, false
@@ -3348,7 +3363,7 @@ func strToInt64(s unistring.String) (int64, bool) {
 				// guaranteed to overflow
 				return -1, false
 			}
-			for i := range 18 {
+			for i := 0; i < 18; i++ {
 				c := s[i]
 				if c < '0' || c > '9' {
 					return -1, false
@@ -3443,5 +3458,24 @@ func (r *Runtime) getPrototypeFromCtor(newTarget, defCtor, defProto *Object) *Ob
 	if obj, ok := proto.(*Object); ok {
 		return obj
 	}
+	r.checkFunctionRealm(newTarget)
 	return defProto
+}
+
+// checkFunctionRealm performs the checks of GetFunctionRealm(). There is only one realm, so the only
+// thing left to do is to throw a TypeError if a revoked Proxy is found.
+func (r *Runtime) checkFunctionRealm(obj *Object) {
+	for {
+		switch o := obj.self.(type) {
+		case *boundFuncObject:
+			obj = o.wrapped
+		case *proxyObject:
+			if o.handler == nil {
+				panic(r.NewTypeError("Cannot perform 'GetFunctionRealm' on a proxy that has been revoked"))
+			}
+			obj = o.target
+		default:
+			return
+		}
+	}
 }

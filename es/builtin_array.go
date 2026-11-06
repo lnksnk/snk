@@ -101,8 +101,8 @@ func (r *Runtime) generic_push(obj *Object, call FunctionCall) Value {
 		r.typeErrorResult(true, "Invalid array length")
 		panic("unreachable")
 	}
-	for i := range call.Arguments {
-		obj.self.setOwnIdx(valueInt(l+int64(i)), call.Arguments[i], true)
+	for i, arg := range call.Arguments {
+		obj.self.setOwnIdx(valueInt(l+int64(i)), arg, true)
 	}
 	n := valueInt(nl)
 	obj.self.setOwnStr("length", n, true)
@@ -276,15 +276,15 @@ func (r *Runtime) arrayproto_toLocaleString(call FunctionCall) Value {
 
 	var buf StringBuilder
 	if a := r.checkStdArrayObj(array); a != nil {
-		for i := range a.values {
+		for i, item := range a.values {
 			if i > 0 {
 				buf.WriteRune(',')
 			}
-			r.writeItemLocaleString(a.values[i], &buf)
+			r.writeItemLocaleString(item, &buf)
 		}
 	} else {
 		length := toLength(array.self.getStr("length", nil))
-		for i := range length {
+		for i := int64(0); i < length; i++ {
 			if i > 0 {
 				buf.WriteRune(',')
 			}
@@ -311,7 +311,7 @@ func (r *Runtime) arrayproto_concat_append(a *Object, item Value) {
 		if aLength+length >= maxInt {
 			panic(r.NewTypeError("Invalid array length"))
 		}
-		for i := range length {
+		for i := int64(0); i < length; i++ {
 			v := obj.self.getIdx(valueInt(i), nil)
 			if v != nil {
 				createDataPropertyOrThrow(a, intToValue(aLength), v)
@@ -329,8 +329,8 @@ func (r *Runtime) arrayproto_concat(call FunctionCall) Value {
 	obj := call.This.ToObject(r)
 	a := arraySpeciesCreate(obj, 0)
 	r.arrayproto_concat_append(a, call.This.ToObject(r))
-	for i := range call.Arguments {
-		r.arrayproto_concat_append(a, call.Arguments[i])
+	for _, item := range call.Arguments {
+		r.arrayproto_concat_append(a, item)
 	}
 	return a
 }
@@ -405,7 +405,7 @@ func (r *Runtime) arrayproto_sort(call FunctionCall) Value {
 	} else {
 		length := toLength(o.self.getStr("length", nil))
 		a := make([]Value, 0, length)
-		for i := range length {
+		for i := int64(0); i < length; i++ {
 			idx := valueInt(i)
 			if o.self.hasPropertyIdx(idx) {
 				a = append(a, nilSafe(o.self.getIdx(idx, nil)))
@@ -418,7 +418,7 @@ func (r *Runtime) arrayproto_sort(call FunctionCall) Value {
 		}
 
 		sort.Stable(&ctx)
-		for i := range len(a) {
+		for i := 0; i < len(a); i++ {
 			o.self.setOwnIdx(valueInt(i), a[i], true)
 		}
 		for i := int64(len(a)); i < length; i++ {
@@ -452,7 +452,7 @@ func (r *Runtime) arrayproto_splice(call FunctionCall) Value {
 			copy(values, src.values[actualStart:])
 			setArrayValues(dst, values)
 		} else {
-			for k := range actualDeleteCount {
+			for k := int64(0); k < actualDeleteCount; k++ {
 				createDataPropertyOrThrow(a, intToValue(k), src.values[k+actualStart])
 			}
 			a.self.setOwnStr("length", intToValue(actualDeleteCount), true)
@@ -484,7 +484,7 @@ func (r *Runtime) arrayproto_splice(call FunctionCall) Value {
 		src.values = values
 		src.objCount = len(values)
 	} else {
-		for k := range actualDeleteCount {
+		for k := int64(0); k < actualDeleteCount; k++ {
 			from := valueInt(k + actualStart)
 			if o.self.hasPropertyIdx(from) {
 				createDataPropertyOrThrow(a, valueInt(k), nilSafe(o.self.getIdx(from, nil)))
@@ -561,8 +561,8 @@ func (r *Runtime) arrayproto_unshift(call FunctionCall) Value {
 				}
 			}
 
-			for k := range call.Arguments {
-				o.self.setOwnIdx(valueInt(int64(k)), call.Arguments[k], true)
+			for k, arg := range call.Arguments {
+				o.self.setOwnIdx(valueInt(int64(k)), arg, true)
 			}
 		}
 	}
@@ -650,7 +650,17 @@ func (r *Runtime) arrayproto_includes(call FunctionCall) Value {
 		searchElement = _positiveZero
 	}
 
+	zero := searchElement == _positiveZero
+
 	if arr := r.checkStdArrayObj(o); arr != nil {
+		if zero {
+			for _, val := range arr.values[n:] {
+				if searchElement.StrictEquals(val) {
+					return valueTrue
+				}
+			}
+			return valueFalse
+		}
 		for _, val := range arr.values[n:] {
 			if searchElement.SameAs(val) {
 				return valueTrue
@@ -662,7 +672,7 @@ func (r *Runtime) arrayproto_includes(call FunctionCall) Value {
 	for ; n < length; n++ {
 		idx := valueInt(n)
 		val := nilSafe(o.self.getIdx(idx, nil))
-		if searchElement.SameAs(val) {
+		if searchElement.SameAs(val) || zero && searchElement.StrictEquals(val) {
 			return valueTrue
 		}
 	}
@@ -724,7 +734,7 @@ func (r *Runtime) arrayproto_every(call FunctionCall) Value {
 		This:      call.Argument(1),
 		Arguments: []Value{nil, nil, o},
 	}
-	for k := range length {
+	for k := int64(0); k < length; k++ {
 		idx := valueInt(k)
 		if val := o.self.getIdx(idx, nil); val != nil {
 			fc.Arguments[0] = val
@@ -745,7 +755,7 @@ func (r *Runtime) arrayproto_some(call FunctionCall) Value {
 		This:      call.Argument(1),
 		Arguments: []Value{nil, nil, o},
 	}
-	for k := range length {
+	for k := int64(0); k < length; k++ {
 		idx := valueInt(k)
 		if val := o.self.getIdx(idx, nil); val != nil {
 			fc.Arguments[0] = val
@@ -766,7 +776,7 @@ func (r *Runtime) arrayproto_forEach(call FunctionCall) Value {
 		This:      call.Argument(1),
 		Arguments: []Value{nil, nil, o},
 	}
-	for k := range length {
+	for k := int64(0); k < length; k++ {
 		idx := valueInt(k)
 		if val := o.self.getIdx(idx, nil); val != nil {
 			fc.Arguments[0] = val
@@ -789,7 +799,7 @@ func (r *Runtime) arrayproto_map(call FunctionCall) Value {
 	if _, stdSrc := o.self.(*arrayObject); stdSrc {
 		if arr, ok := a.self.(*arrayObject); ok {
 			values := make([]Value, length)
-			for k := range length {
+			for k := int64(0); k < length; k++ {
 				idx := valueInt(k)
 				if val := o.self.getIdx(idx, nil); val != nil {
 					fc.Arguments[0] = val
@@ -801,7 +811,7 @@ func (r *Runtime) arrayproto_map(call FunctionCall) Value {
 			return a
 		}
 	}
-	for k := range length {
+	for k := int64(0); k < length; k++ {
 		idx := valueInt(k)
 		if val := o.self.getIdx(idx, nil); val != nil {
 			fc.Arguments[0] = val
@@ -825,7 +835,7 @@ func (r *Runtime) arrayproto_filter(call FunctionCall) Value {
 		if _, stdSrc := o.self.(*arrayObject); stdSrc {
 			if arr := r.checkStdArrayObj(a); arr != nil {
 				var values []Value
-				for k := range length {
+				for k := int64(0); k < length; k++ {
 					idx := valueInt(k)
 					if val := o.self.getIdx(idx, nil); val != nil {
 						fc.Arguments[0] = val
@@ -841,7 +851,7 @@ func (r *Runtime) arrayproto_filter(call FunctionCall) Value {
 		}
 
 		to := int64(0)
-		for k := range length {
+		for k := int64(0); k < length; k++ {
 			idx := valueInt(k)
 			if val := o.self.getIdx(idx, nil); val != nil {
 				fc.Arguments[0] = val
@@ -1118,7 +1128,7 @@ func (r *Runtime) arrayproto_find(call FunctionCall) Value {
 		This:      call.Argument(1),
 		Arguments: []Value{nil, nil, o},
 	}
-	for k := range l {
+	for k := int64(0); k < l; k++ {
 		idx := valueInt(k)
 		kValue := o.self.getIdx(idx, nil)
 		fc.Arguments[0], fc.Arguments[1] = kValue, idx
@@ -1138,7 +1148,7 @@ func (r *Runtime) arrayproto_findIndex(call FunctionCall) Value {
 		This:      call.Argument(1),
 		Arguments: []Value{nil, nil, o},
 	}
-	for k := range l {
+	for k := int64(0); k < l; k++ {
 		idx := valueInt(k)
 		kValue := o.self.getIdx(idx, nil)
 		fc.Arguments[0], fc.Arguments[1] = kValue, idx
@@ -1267,7 +1277,7 @@ func (r *Runtime) arrayproto_with(call FunctionCall) Value {
 
 	if src := r.checkStdArrayObj(o); src != nil {
 		a := make([]Value, 0, length)
-		for k := range length {
+		for k := int64(0); k < length; k++ {
 			pk := valueInt(k)
 			var fromValue Value
 			if k == actualIndex {
@@ -1280,7 +1290,7 @@ func (r *Runtime) arrayproto_with(call FunctionCall) Value {
 		return r.newArrayValues(a)
 	} else {
 		a := r.newArrayLength(length)
-		for k := range length {
+		for k := int64(0); k < length; k++ {
 			pk := valueInt(k)
 			var fromValue Value
 			if k == actualIndex {
@@ -1300,7 +1310,7 @@ func (r *Runtime) arrayproto_toReversed(call FunctionCall) Value {
 
 	if src := r.checkStdArrayObj(o); src != nil {
 		a := make([]Value, 0, length)
-		for k := range length {
+		for k := int64(0); k < length; k++ {
 			from := valueInt(length - k - 1)
 			fromValue := src.values[from]
 			a = append(a, fromValue)
@@ -1308,7 +1318,7 @@ func (r *Runtime) arrayproto_toReversed(call FunctionCall) Value {
 		return r.newArrayValues(a)
 	} else {
 		a := r.newArrayLength(length)
-		for k := range length {
+		for k := int64(0); k < length; k++ {
 			pk := valueInt(k)
 			from := valueInt(length - k - 1)
 			fromValue := o.self.getIdx(from, nil)
@@ -1342,7 +1352,7 @@ func (r *Runtime) arrayproto_toSorted(call FunctionCall) Value {
 		copy(a, src.values)
 	} else {
 		a = make([]Value, 0, length)
-		for i := range length {
+		for i := int64(0); i < length; i++ {
 			idx := valueInt(i)
 			a = append(a, nilSafe(o.self.getIdx(idx, nil)))
 		}
@@ -1515,19 +1525,22 @@ func (r *Runtime) array_from(call FunctionCall) Value {
 		if ctor != nil {
 			arr = ctor([]Value{intToValue(l)}, nil)
 		} else {
+			if l > math.MaxUint32 {
+				panic(r.newError(r.getRangeError(), "Invalid array length"))
+			}
 			arr = r.newArrayValues(nil)
 		}
 		if mapFn == nil {
 			if a := r.checkStdArrayObjWithProto(arr); a != nil {
 				values := make([]Value, l)
-				for k := range l {
+				for k := int64(0); k < l; k++ {
 					values[k] = nilSafe(arrayLike.self.getIdx(valueInt(k), nil))
 				}
 				setArrayValues(a, values)
 				return arr
 			}
 		}
-		for k := range l {
+		for k := int64(0); k < l; k++ {
 			idx := valueInt(k)
 			item := arrayLike.self.getIdx(idx, nil)
 			if mapFn != nil {
@@ -1568,8 +1581,8 @@ func (r *Runtime) array_of(call FunctionCall) Value {
 	}
 	l := intToValue(int64(len(call.Arguments)))
 	arr := ctor([]Value{l}, nil)
-	for i := range call.Arguments {
-		createDataPropertyOrThrow(arr, intToValue(int64(i)), call.Arguments[i])
+	for i, val := range call.Arguments {
+		createDataPropertyOrThrow(arr, intToValue(int64(i)), val)
 	}
 	arr.self.setOwnStr("length", l, true)
 	return arr

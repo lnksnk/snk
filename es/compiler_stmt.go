@@ -94,8 +94,8 @@ func (c *compiler) updateEnterBlock(enter *enterBlock) {
 		stashSize = len(scope.bindings)
 		enter.names = scope.makeNamesMap()
 	} else {
-		for i := range scope.bindings {
-			if scope.bindings[i].inStash {
+		for _, b := range scope.bindings {
+			if b.inStash {
 				stashSize++
 			} else {
 				stackSize++
@@ -154,7 +154,12 @@ func (c *compiler) compileTryStatement(v *ast.TryStatement, needResult bool) {
 						c.throwSyntaxError(offset, "Catch variable may not be eval or arguments in strict mode")
 					}
 				}
-				c.scope.bindNameLexical(name, true, offset)
+				b, _ := c.scope.bindNameLexical(name, true, offset)
+				if _, ok := v.Catch.Parameter.(*ast.Identifier); ok {
+					// A simple catch parameter may be redeclared with var in the catch block,
+					// including by a direct eval() (B.3.4).
+					b.isVar = true
+				}
 			})
 			enter := &enterBlock{}
 			c.emit(enter)
@@ -1075,11 +1080,11 @@ func (c *compiler) isEmptyResult(st ast.Statement) bool {
 	case *ast.LabelledStatement:
 		return c.isEmptyResult(st.Statement)
 	case *ast.BlockStatement:
-		for si := range st.List {
-			if _, ok := st.List[si].(*ast.BranchStatement); ok {
+		for _, s := range st.List {
+			if _, ok := s.(*ast.BranchStatement); ok {
 				return true
 			}
-			if !c.isEmptyResult(st.List[si]) {
+			if !c.isEmptyResult(s) {
 				return false
 			}
 		}
@@ -1090,14 +1095,14 @@ func (c *compiler) isEmptyResult(st ast.Statement) bool {
 
 func (c *compiler) scanStatements(list []ast.Statement) (lastProducingIdx int, breakingBlock *block) {
 	lastProducingIdx = -1
-	for i := range list {
-		if bs, ok := list[i].(*ast.BranchStatement); ok {
+	for i, st := range list {
+		if bs, ok := st.(*ast.BranchStatement); ok {
 			if blk := c.findBranchBlock(bs); blk != nil {
 				breakingBlock = blk
 			}
 			break
 		}
-		if !c.isEmptyResult(list[i]) {
+		if !c.isEmptyResult(st) {
 			lastProducingIdx = i
 		}
 	}
@@ -1142,11 +1147,11 @@ func (c *compiler) compileStatements(list []ast.Statement, needResult bool) {
 		c.compileStatementsNeedResult(list, lastProducingIdx)
 		return
 	}
-	for si := range list {
-		if _, ok := list[si].(*ast.FunctionDeclaration); ok {
+	for _, st := range list {
+		if _, ok := st.(*ast.FunctionDeclaration); ok {
 			continue
 		}
-		c.compileStatement(list[si], false)
+		c.compileStatement(st, false)
 	}
 }
 
