@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
-	snkio "github.com/lnksnk/snk/io"
 )
 
 func RequestRangeInfo(hddr http.Header) (rangeOffset int64, rangeType string) {
@@ -28,7 +26,8 @@ func ServeHttpRange(w http.ResponseWriter, r *http.Request, source io.ReadSeeker
 	if rangeType == "" && rangeOffset == -1 && source != nil {
 		w.Header().Set("Accept-Ranges", "bytes")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", srcsize))
-		srcsize, err = snkio.Fprint(w, io.LimitReader(source, srcsize))
+		w.WriteHeader(http.StatusOK)
+		_, err = io.CopyN(w, source, srcsize)
 		return
 	}
 	if rangeType != "" && rangeOffset > -1 && source != nil {
@@ -48,10 +47,12 @@ func ServeHttpRange(w http.ResponseWriter, r *http.Request, source io.ReadSeeker
 			contentrange := fmt.Sprintf("%s %d-%d/%d", rangeType, rangeOffset, maxoffset, srcsize)
 			w.Header().Set("Content-Range", contentrange)
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", maxlen))
-			w.WriteHeader(206)
+			w.WriteHeader(http.StatusPartialContent)
+			if _, err = source.Seek(rangeOffset, io.SeekStart); err == nil {
+				_, err = io.CopyN(w, source, maxlen)
+			}
+			return
 		}
-		_, err = snkio.Fprint(w, io.LimitReader(source, srcsize))
-		return
 	}
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", 0))
 	return
