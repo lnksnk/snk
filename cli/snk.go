@@ -36,14 +36,13 @@ import (
 	"strings"
 	"syscall"
 
-	es "github.com/lnksnk/snk/es"
 	"github.com/medama-io/go-useragent"
 )
 
 var fsys = fs.FSys()
 var sbkh = fses.ESHandler(fsys)
 
-func ESVmSetupRequestContext(ctx context.Context, sql snksql.SQLHandler, fs fs.FileSystem, vmr fst.RApi[*es.Runtime], params parameters.Parameters, ua useragent.UserAgent) {
+func VmSetupRequestContext(ctx context.Context, sql snksql.SQLHandler, fs fs.FileSystem, vmr fst.RApi, params parameters.Parameters, ua useragent.UserAgent) {
 	vmr.Set("escape", map[string]any{"url": map[string]any{"path": url.PathEscape, "query": url.QueryEscape}, "html": html.EscapeString})
 	vmr.Set("unescape", map[string]any{"url": map[string]any{"path": url.PathUnescape, "query": url.QueryUnescape}, "html": html.UnescapeString})
 	vmr.Set("DB", sql)
@@ -197,11 +196,11 @@ func main() {
 		}
 		return
 	}), fsserve.ServeUTFFunc(func(fi fs.FileInfo, fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, mimeinfo mime.MimeInfo, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error) {
-		fst.ServeHTTP(sbkh, w, r, fi, fsstat, fsopen, func(vm *es.Runtime, vmr fst.RApi[*es.Runtime], r *http.Request, vmsetup func(fst.RApi[*es.Runtime], ...fst.VMItem)) {
+		fst.ServeHTTP(sbkh, w, r, fi, fsstat, fsopen, func(vm any, vmr fst.RApi, r *http.Request, vmsetup func(fst.RApi, ...fst.VMItem)) {
 			vmr.Set("hostip", func() string {
 				return r.Host
 			})
-			ESVmSetupRequestContext(r.Context(), snksql.InvokeSQLHandler(r.Context(), snksql.FormatQueryFunc(func(out io.Writer, name, driver, query string, a ...any) (err error) {
+			VmSetupRequestContext(r.Context(), snksql.InvokeSQLHandler(r.Context(), snksql.FormatQueryFunc(func(out io.Writer, name, driver, query string, a ...any) (err error) {
 				return sbkh.FormatQuery(vm, out, name, driver, query)
 			}), params), fsys, vmr, params, ua)
 		})

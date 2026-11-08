@@ -15,7 +15,7 @@ import (
 )
 
 type FSTHandler[R any, P any, M any, O any] interface {
-	FSTFormatQuery[R]
+	FSTFormatQuery
 	FSTCompileProgram[R, P, M, O]
 	FSTResolveHostModule[R, P, M, O]
 	FSTExecProgram[R, P, M, O]
@@ -168,7 +168,7 @@ func EvalR[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, 
 				_, err = execModule(vm, modrec)
 				return
 			}
-			var vmr RApi[R] = &rapi[R]{vm: vm}
+			var vmr RApi = &rapi[R]{vm: vm}
 			var prvprint, prvprintln = SetVMprints[R](vmr, w)
 			if prvprint != nil && prvprintln != nil {
 				defer func() {
@@ -215,7 +215,7 @@ func Eval[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, M
 					defer disposevm(vm)
 				}
 			}
-			var vmr RApi[R] = &rapi[R]{vm: vm}
+			var vmr RApi = &rapi[R]{vm: vm}
 			vmr.Set("eval", func(a ...any) (result any, err error) {
 				return EvalR(prgmtmplts, compile, rootfi, fsstat, fsopen, vm, w, execDependant, execModule, execProgram, a...)
 			})
@@ -320,12 +320,12 @@ func (f *FSTHANDLER[R, P, M, O]) ResolveHostModule(specifier string, fndspecifie
 }
 
 // SetVMArgs implements [FSTHandler].
-func (f *FSTHANDLER[R, P, M, O]) SetVMArgs(vmr RApi[R], args ...VMItem) {
+func (f *FSTHANDLER[R, P, M, O]) SetVMArgs(vmr RApi, args ...VMItem) {
 	SetVMArgs[R](vmr, args...)
 }
 
 // FormatQuery implements [FSTHandler].
-func (f *FSTHANDLER[R, P, M, O]) FormatQuery(vm R, out io.Writer, name, driver, query string, a ...any) error {
+func (f *FSTHANDLER[R, P, M, O]) FormatQuery(vm any, out io.Writer, name, driver, query string, a ...any) error {
 	return FSTFormatSql(f.prgmtmplts, f.Eval, vm, f.fss, f.fss, out, name, driver, query)
 }
 
@@ -347,7 +347,7 @@ func (vi VMItem) Value() (val any) {
 
 type FSTInvokeVM[R any] func(vm R) R
 
-type FSTSetupVM[R any, P any, M any, O any] func(vmr RApi[R])
+type FSTSetupVM[R any, P any, M any, O any] func(vmr RApi)
 
 type FSTDisposeVM[R any] func(vm R)
 
@@ -417,7 +417,7 @@ var emptyprint = func(...any) error {
 	return nil
 }
 
-func SetVMArgs[R any](vmr RApi[R], args ...VMItem) {
+func SetVMArgs[R any](vmr RApi, args ...VMItem) {
 	if vmr != nil {
 		for ai := range args {
 			vmr.Set(args[ai].Key(), args[ai].Value())
@@ -429,7 +429,7 @@ func SetVMEvalR[R any, P any, M any, O any](h FSTHandler[R, P, M, O], vm R, w io
 
 }
 
-func SetVMprints[R any](vmr RApi[R], w io.Writer) (prvprint func(...any) error, prvprintln func(...any) error) {
+func SetVMprints[R any](vmr RApi, w io.Writer) (prvprint func(...any) error, prvprintln func(...any) error) {
 	if vmr != nil {
 		if w == nil {
 			vmr.Set("print", emptyprint)
@@ -456,11 +456,11 @@ func SetVMprints[R any](vmr RApi[R], w io.Writer) (prvprint func(...any) error, 
 	return
 }
 
-type FTSSetupRequestVM[R any] func(vm R, vmr RApi[R], r *http.Request, vmsetup func(RApi[R], ...VMItem))
+type FTSSetupRequestVM[R any] func(vm any, vmr RApi, r *http.Request, vmsetup func(RApi, ...VMItem))
 
 func ServeHTTP[R any, P any, M any, O any](h FSTHandler[R, P, M, O], w http.ResponseWriter, r *http.Request, rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, setupRequestVM FTSSetupRequestVM[R]) {
 	var vm R
-	if _, err := h.Eval(rootfi, fsstat, fsopen, vm, w, func(vmr RApi[R]) {
+	if _, err := h.Eval(rootfi, fsstat, fsopen, vm, w, func(vmr RApi) {
 		if setupRequestVM != nil {
 			setupRequestVM(vm, vmr, r, SetVMArgs[R])
 		}
@@ -469,7 +469,7 @@ func ServeHTTP[R any, P any, M any, O any](h FSTHandler[R, P, M, O], w http.Resp
 	}
 }
 
-type RApi[R any] interface {
+type RApi interface {
 	Set(string, any)
 	Get(string) any
 }
@@ -543,23 +543,23 @@ type RValue interface {
 	//hash(hasher *maphash.Hash) uint64
 }
 
-type FSTFormatQuery[R any] interface {
-	FormatQuery(vm R, out io.Writer, name, driver, query string, a ...any) error
+type FSTFormatQuery interface {
+	FormatQuery(vm any, out io.Writer, name, driver, query string, a ...any) error
 }
 
-type FSTFormatQueryFunc[R any] func(vm R, out io.Writer, name, driver, query string, a ...any) error
+type FSTFormatQueryFunc func(vm any, out io.Writer, name, driver, query string, a ...any) error
 
-func (fstfrmtqryfnc FSTFormatQueryFunc[R]) FormatQuery(vm R, out io.Writer, name, driver, query string, a ...any) error {
+func (fstfrmtqryfnc FSTFormatQueryFunc) FormatQuery(vm any, out io.Writer, name, driver, query string, a ...any) error {
 	return fstfrmtqryfnc(vm, out, name, driver, query, a...)
 }
 
-func FSTFormatSql[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, M]], eval func(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (result any, err error), vm R, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, out io.Writer, name, driver, query string, a ...any) (err error) {
+func FSTFormatSql[R any, P any, M any, O any](prgmtmplts snkio.Map[string, Template[P, M]], eval func(rootfi snkfs.FileInfo, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, vm R, w io.Writer, vmsetup FSTSetupVM[R, P, M, O]) (result any, err error), vm any, fsstat snkfs.StatFileSystem, fsopen snkfs.OpenFileSystem, out io.Writer, name, driver, query string, a ...any) (err error) {
 	return snksqlfs.FSFormatQuery(out, name, driver, query, fsstat, fsopen, func(unmatchedpath string) {
 		if prgmtmplts != nil && prgmtmplts.Exist(unmatchedpath) {
 			go prgmtmplts.Delete(unmatchedpath)
 		}
 	}, func(out io.Writer, sqlfi fs.FileInfo, fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem) (preperr error) {
-		_, preperr = eval(sqlfi, fsstat, fsopen, vm, out, nil)
+		_, preperr = eval(sqlfi, fsstat, fsopen, vm.(R), out, nil)
 		return
 	})
 }
