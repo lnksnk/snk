@@ -309,7 +309,7 @@ func serveWsSse(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, path string,
 	}); served {
 		return
 	}
-	served, err = serversent.UpgradeAndServe(w, r, func(w http.ResponseWriter, r *http.Request) error {
+	served, err = serversent.UpgradeAndServeContext(r.Context(), w, r, func(w http.ResponseWriter, r *http.Request, ssn serversent.Session) error {
 		var params = parameters.NewParameters()
 		defer params.ClearAll()
 		parameters.LoadParametersFromUrlValues(params, r.URL.Query())
