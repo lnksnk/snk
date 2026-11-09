@@ -101,6 +101,7 @@ type Parameters interface {
 	Set(string, bool, ...string)
 	Empty(...string) bool
 	Exist(string) bool
+	UrlExist(string) bool
 	Remove(string) []string
 	SetFile(string, bool, ...interface{})
 	FileExist(string) bool
@@ -215,6 +216,19 @@ func storeParameter(params *parameters, isurl bool, pname string, clear bool, pv
 			}
 		}
 	}
+}
+
+// Url -> check if parameter is url value
+// pname : name
+func (params *parameters) UrlExist(pname string) bool {
+	if pname = strings.ToUpper(strings.TrimSpace(pname)); pname == "" {
+		return false
+	}
+	if urlkeys := params.urlkeys; urlkeys != nil {
+		_, ok := urlkeys.Load(pname)
+		return ok
+	}
+	return false
 }
 
 // Exist -> check if parameter exist
