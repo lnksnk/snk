@@ -28,7 +28,7 @@ import (
 	_ "github.com/lnksnk/snk/sql/driver/sqlite"
 	snksqlfs "github.com/lnksnk/snk/sql/fs"
 	fst "github.com/lnksnk/snk/template/fs"
-	"github.com/lnksnk/snk/template/fs/fses"
+	"github.com/lnksnk/snk/template/fs/fssobek"
 	"github.com/lnksnk/snk/ui"
 	"github.com/lnksnk/snk/ui/db"
 	"github.com/lnksnk/snk/w3css"
@@ -36,11 +36,12 @@ import (
 	"strings"
 	"syscall"
 
+	snknet "github.com/lnksnk/snk/net"
 	"github.com/medama-io/go-useragent"
 )
 
 var fsys = fs.FSys()
-var sbkh = fses.ESHandler(fsys)
+var sbkh = fssobek.SobekHandler(fsys) //fses.ESHandler(fsys)
 
 func VmSetupRequestContext(ctx context.Context, sql snksql.SQLHandler, fs fs.FileSystem, vmr fst.RApi, params parameters.Parameters, ua useragent.UserAgent) {
 	vmr.Set("escape", map[string]any{"url": map[string]any{"path": url.PathEscape, "query": url.QueryEscape}, "html": html.EscapeString})
@@ -207,7 +208,7 @@ func main() {
 		return
 	}), fsserve.UTF8Ext(".html"), fsserve.UTF8Ext(".js"), fsserve.UTF8Ext(".css"), fsserve.UTF8Ext(".json"), fsserve.UTF8Ext(".m3u"))
 	for _, ln := range lstnrs {
-		go http.Serve(ln, hndlr)
+		go snknet.ServeHttp(ln, hndlr) //http.Serve(ln, hndlr)
 	}
 	<-quit
 	for _, ln := range lstnrs {
