@@ -1,16 +1,15 @@
 package net
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"net/http"
-
-	snkio "github.com/lnksnk/snk/io"
 )
 
 type responsewriter struct {
 	conn       net.Conn
-	wtrbf      snkio.BufferWriter
+	wtrbf      *bufio.Writer
 	headers    http.Header
 	statusCode int
 	headerSent bool
@@ -21,8 +20,8 @@ type responsewriter struct {
 func (w *responsewriter) Close() error {
 	wtrbf := w.wtrbf
 	w.wtrbf, w.conn = nil, nil
-	if wtrbf != nil && !wtrbf.Empty() {
-		wtrbf.Close()
+	if wtrbf != nil && wtrbf.Buffered() > 0 {
+		return wtrbf.Flush()
 	}
 	return nil
 }
@@ -38,14 +37,12 @@ func (w *responsewriter) Flush() {
 		if !headerSent {
 			w.WriteHeader(http.StatusOK)
 		}
-		if !wtrbf.Empty() {
-			if _, err := wtrbf.WriteTo(conn); err != nil {
-				wtrbf.Close()
-				w.wtrbf = nil
+		if wtrbf.Buffered() > 0 {
+			if err := wtrbf.Flush(); err != nil {
 				w.conn = nil
-				return
+				w.wtrbf = nil
 			}
-			wtrbf.Reset()
+			wtrbf.Reset(conn)
 		}
 	}
 }
@@ -89,13 +86,12 @@ func (w *responsewriter) WriteHeader(statusCode int) {
 
 		// 3. Write the blank line ending header metadata block
 		fmt.Fprint(wtrbf, "\r\n")
-		if _, err := wtrbf.WriteTo(conn); err != nil {
-			wtrbf.Close()
+		if err := wtrbf.Flush(); err != nil {
 			w.wtrbf = nil
 			w.conn = nil
 			return
 		}
-		wtrbf.Reset()
+		wtrbf.Reset(conn)
 	}
 }
 
@@ -105,8 +101,7 @@ func ResponseWriter(conn net.Conn) (w interface {
 	Closed() bool
 	Close() error
 }) {
-	var wtrbf, _ = snkio.WriterBuffer()
-	resp := &responsewriter{conn: conn, headers: make(http.Header), wtrbf: wtrbf, statusCode: http.StatusOK}
+	resp := &responsewriter{conn: conn, headers: make(http.Header), wtrbf: bufio.NewWriter(conn), statusCode: http.StatusOK}
 	w = resp
 	return
 }
