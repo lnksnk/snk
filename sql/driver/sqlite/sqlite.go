@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql/driver"
 	"strconv"
+	"uuid"
 
 	snksql "github.com/lnksnk/snk/sql"
 	snksqldrv "github.com/lnksnk/snk/sql/driver"
@@ -25,5 +26,12 @@ var SQLiteDriver = snksqldrv.NewDriver(snksqldrv.DriverContextFunc(func(datasour
 }))
 
 func init() {
+	sqlite.RegisterFunction("uuid", &sqlite.FunctionImpl{
+		NArgs:         0,    // Accept 0 arguments for uuid()
+		Deterministic: true, // Optimizes execution when evaluated within query contexts
+		Scalar: func(ctx *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+			return uuid.NewV7().String(), nil
+		},
+	})
 	snksql.Register("sqlite", SQLiteDriver, nil)
 }
