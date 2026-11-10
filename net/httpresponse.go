@@ -95,13 +95,13 @@ func (w *responsewriter) WriteHeader(statusCode int) {
 	}
 }
 
-func ResponseWriter(conn net.Conn) (w interface {
+func ResponseWriter(conn net.Conn, b *bufio.Writer) (w interface {
 	http.ResponseWriter
 	http.Flusher
 	Closed() bool
 	Close() error
 }) {
-	resp := &responsewriter{conn: conn, headers: make(http.Header), wtrbf: bufio.NewWriter(conn), statusCode: http.StatusOK}
+	resp := &responsewriter{conn: conn, headers: make(http.Header), wtrbf: b, statusCode: http.StatusOK}
 	w = resp
 	return
 }

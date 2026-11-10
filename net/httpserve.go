@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
@@ -30,9 +31,10 @@ func handleServe(conn net.Conn, appHandler http.Handler) {
 	// If the client idles longer than this, the read fails and the loop ends safely.
 	conn.SetReadDeadline(time.Now().Add(keepAliveTimeout))
 
+	var bufrw = bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 	for {
 
-		req, err := Request(conn)
+		req, err := Request(bufrw.Reader)
 		if err != nil {
 			// If it's a timeout or EOF (client gracefully left), break out cleanly
 			if err == io.EOF || isTimeout(err) {
@@ -46,7 +48,7 @@ func handleServe(conn net.Conn, appHandler http.Handler) {
 		conn.SetReadDeadline(time.Time{})
 
 		// 3. Initialize custom ResponseWriter using our buffered writer stack
-		w := ResponseWriter(conn)
+		w := ResponseWriter(conn, bufrw.Writer)
 
 		// Determine if the client wants to terminate the persistence loop immediately
 		clientWantsClose := strings.ToLower(req.Header.Get("Connection")) == "close" || req.Close
@@ -75,7 +77,7 @@ func handleServe(conn net.Conn, appHandler http.Handler) {
 			io.Copy(io.Discard, req.Body)
 			req.Body.Close()
 		}
-		conn.SetReadDeadline(time.Now().Add(time.Microsecond * 1))
+		conn.SetReadDeadline(time.Now().Add(1 * time.Nanosecond))
 	}
 }
 
