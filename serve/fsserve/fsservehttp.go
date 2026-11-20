@@ -1,6 +1,7 @@
 package fsserve
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,8 +13,8 @@ import (
 	"github.com/lnksnk/snk/parameters"
 	"github.com/lnksnk/snk/serve"
 	"github.com/lnksnk/snk/serversent"
+	"github.com/lnksnk/snk/useragent"
 	"github.com/lnksnk/snk/websocket"
-	"github.com/medama-io/go-useragent"
 )
 
 type ServerWS interface {
@@ -27,13 +28,13 @@ func (sws ServeWSFunc) ServeWS(fsstat fs.StatFileSystem, fsopen fs.OpenFileSyste
 }
 
 type ServeSSE interface {
-	ServeSSE(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error)
+	ServeSSE(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request, ssn serversent.Session) (err error)
 }
 
-type ServeSSEFunc func(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error)
+type ServeSSEFunc func(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request, ssn serversent.Session) (err error)
 
-func (ssse ServeSSEFunc) ServeSSE(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error) {
-	return ssse(fsstat, fsopen, path, params, ua, w, r)
+func (ssse ServeSSEFunc) ServeSSE(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request, ssn serversent.Session) (err error) {
+	return ssse(fsstat, fsopen, path, params, ua, w, r, ssn)
 }
 
 type ServeUTF interface {
@@ -166,7 +167,7 @@ func ServeHttp(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, pathnotfound 
 		})
 	}
 	if srvsse == nil {
-		srvsse = ServeSSEFunc(func(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error) {
+		srvsse = ServeSSEFunc(func(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request, ssn serversent.Session) (err error) {
 			return fmt.Errorf("sent events not supported")
 		})
 	}
@@ -301,19 +302,17 @@ func (hs *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveWsSse(fsstat fs.StatFileSystem, fsopen fs.OpenFileSystem, path string, ua useragent.UserAgent, srvws ServerWS, srvsse ServeSSE, w http.ResponseWriter, r *http.Request) (served bool, err error) {
-	if served, err = websocket.UpgradeAndServe(w, r, func(w http.ResponseWriter, r *http.Request) error {
-		var params = parameters.NewParameters()
-		defer params.ClearAll()
-		parameters.LoadParametersFromUrlValues(params, r.URL.Query())
+	var params = parameters.NewParameters()
+	defer params.ClearAll()
+	parameters.LoadParametersFromUrlValues(params, r.URL.Query())
+	if served, err = websocket.UpgradeAndServeContext(r.Context(), w, r, func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 		return srvws.ServeWS(fsstat, fsopen, path, params, ua, w, r)
 	}); served {
 		return
 	}
-	served, err = serversent.UpgradeAndServeContext(r.Context(), w, r, func(w http.ResponseWriter, r *http.Request, ssn serversent.Session) error {
-		var params = parameters.NewParameters()
-		defer params.ClearAll()
-		parameters.LoadParametersFromUrlValues(params, r.URL.Query())
-		return srvsse.ServeSSE(fsstat, fsopen, path, params, ua, w, r)
+	served, err = serversent.UpgradeAndServeContext(r.Context(), w, r, func(ctx context.Context, w http.ResponseWriter, r *http.Request, ssn serversent.Session) (err error) {
+		defer ssn.Close()
+		return srvsse.ServeSSE(fsstat, fsopen, path, params, ua, w, r, ssn)
 	})
 	return
 }

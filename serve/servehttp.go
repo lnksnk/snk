@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,8 +11,8 @@ import (
 	"github.com/lnksnk/snk/mime"
 	"github.com/lnksnk/snk/parameters"
 	"github.com/lnksnk/snk/serversent"
+	"github.com/lnksnk/snk/useragent"
 	"github.com/lnksnk/snk/websocket"
-	"github.com/medama-io/go-useragent"
 )
 
 type ServerWS interface {
@@ -25,13 +26,13 @@ func (sws ServeWSFunc) ServeWS(path string, params parameters.Parameters, ua use
 }
 
 type ServeSSE interface {
-	ServeSSE(path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error)
+	ServeSSE(path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request, ssn serversent.Session) (err error)
 }
 
-type ServeSSEFunc func(path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error)
+type ServeSSEFunc func(path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request, ssn serversent.Session) (err error)
 
-func (ssse ServeSSEFunc) ServeSSE(path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error) {
-	return ssse(path, params, ua, w, r)
+func (ssse ServeSSEFunc) ServeSSE(path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request, ssn serversent.Session) (err error) {
+	return ssse(path, params, ua, w, r, ssn)
 }
 
 type ServeUTF interface {
@@ -150,7 +151,7 @@ func ServeHttp(a ...any) (hndlr http.Handler, err error) {
 		}
 	}
 	if srvsse == nil {
-		srvsse = ServeSSEFunc(func(path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request) (err error) {
+		srvsse = ServeSSEFunc(func(path string, params parameters.Parameters, ua useragent.UserAgent, w http.ResponseWriter, r *http.Request, ssn serversent.Session) (err error) {
 			return fmt.Errorf("sent events not supported")
 		})
 	}
@@ -275,19 +276,16 @@ func (hs *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveWsSse(path string, ua useragent.UserAgent, srvws ServerWS, srvsse ServeSSE, w http.ResponseWriter, r *http.Request) (served bool, err error) {
-	if served, err = websocket.UpgradeAndServe(w, r, func(w http.ResponseWriter, r *http.Request) error {
-		var params = parameters.NewParameters()
-		defer params.ClearAll()
-		parameters.LoadParametersFromUrlValues(params, r.URL.Query())
+	var params = parameters.NewParameters()
+	defer params.ClearAll()
+	parameters.LoadParametersFromUrlValues(params, r.URL.Query())
+	if served, err = websocket.UpgradeAndServeContext(r.Context(), w, r, func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 		return srvws.ServeWS(path, params, ua, w, r)
 	}); served {
 		return
 	}
-	served, err = serversent.UpgradeAndServeContext(r.Context(), w, r, func(w http.ResponseWriter, r *http.Request, ssn serversent.Session) error {
-		var params = parameters.NewParameters()
-		defer params.ClearAll()
-		parameters.LoadParametersFromUrlValues(params, r.URL.Query())
-		return srvsse.ServeSSE(path, params, ua, w, r)
+	served, err = serversent.UpgradeAndServeContext(r.Context(), w, r, func(ctx context.Context, w http.ResponseWriter, r *http.Request, ssn serversent.Session) error {
+		return srvsse.ServeSSE(path, params, ua, w, r, ssn)
 	})
 	return
 }
