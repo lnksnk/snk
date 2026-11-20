@@ -1,14 +1,17 @@
 package websocket
 
 import (
+	"context"
 	"net/http"
 	"strings"
 )
 
-func UpgradeAndServe(w http.ResponseWriter, r *http.Request, servews func(w http.ResponseWriter, r *http.Request) error) (served bool, err error) {
+type ServeWSContextFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request) error
+
+func UpgradeAndServeContext(ctx context.Context, w http.ResponseWriter, r *http.Request, servews ServeWSContextFunc) (served bool, err error) {
 	if served = strings.Contains(r.Header.Get("Connection"), "Upgrade") && strings.Contains(r.Header.Get("Upgrade"), "websocket"); served {
 		if servews != nil {
-			err = servews(w, r)
+			err = servews(ctx, w, r)
 		}
 		return
 	}
