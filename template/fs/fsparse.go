@@ -235,14 +235,12 @@ func FParseFS(topout io.Writer, unmatched map[string]bool, matched map[string]ti
 					}
 					return
 				}
+				if emnxt.elmargs == nil {
+					emnxt.elmargs = map[string]any{}
+				}
 				if !emnxt.elmbf.Empty() {
-					if emnxt.elmargs == nil {
-						emnxt.elmargs = map[string]any{"cntnt": emnxt.elmbf.Clone()}
-						emnxt.elmbf.Reset()
-					} else {
-						emnxt.elmargs["cntnt"] = emnxt.elmbf.Clone()
-						emnxt.elmbf.Reset()
-					}
+					emnxt.elmargs["cntnt"] = emnxt.elmbf.Clone()
+					emnxt.elmbf.Reset()
 				}
 				emnxt.elmargs["e-root"] = strings.ReplaceAll(emnxt.elmfi.Root(), "/", ":")
 				emnxt.elmargs["e-base"] = strings.ReplaceAll(emnxt.elmfi.Base(), "/", ":")
