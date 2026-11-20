@@ -1,0 +1,36 @@
+<script type="module" defer>
+        import { SSESnk } from '[#ep-root#]snksse.js';
+        // Initialize with explicit custom server events you plan to receive
+const sse = new SSESnk('', {
+  customEvents: [],
+  withCredentials: true
+});
+
+// 1. Listen to native lifecycle triggers
+sse.addEventListener('open', (e) => console.log('Connected to stream!', e.data));
+sse.addEventListener('error', (e) => console.error('Stream encountered an error:', e.data));
+sse.addEventListener('close', (e) => console.log('Stream terminated:', e.data));
+sse.addEventListener('sessionid', (e) =>{
+  console.log('Session id:', e.data);
+  if (GlobalUniqueID!==undefined) {
+    GlobalUniqueID=e.data;
+    console.log('Global Unique id:', e.data);
+  }
+});
+
+// 2. Listen to generic data streams (data: payload)
+sse.addEventListener('message', (e) => {
+  const data = e.data;
+  //console.log('Generic stream message:',e.lastEventId, data);
+  document.getElementById("result").innerText=e.type+"-> "+e.lastEventId;
+});
+
+// 3. Setup Custom Events
+[#cntnt#]
+
+// 4. Spin up the connection
+sse.connect();
+
+// 5. Clean teardown when navigating away or logging out
+// sse.disconnect();
+</script>
