@@ -37,7 +37,7 @@ import (
 	"syscall"
 
 	snknet "github.com/lnksnk/snk/net"
-	"github.com/medama-io/go-useragent"
+	"github.com/lnksnk/snk/useragent"
 )
 
 var fsys = fs.FSys()
