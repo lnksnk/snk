@@ -102,7 +102,7 @@ func main() {
 		defaultlocalpath = sourcepath
 	}
 	w3css.LoadW3("/w3css/", fsys.Map, fsys.Set)
-	ui.LoadUi("/parsing/", fsys.Map, fsys.Set)
+	ui.LoadUi("/snk/", fsys.Map, fsys.Set)
 	db.LoadQry("/snk/db/", fsys.Map, fsys.Set)
 	htmx.LoadHTMX("/htmx/", fsys.Map, fsys.Set)
 
