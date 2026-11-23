@@ -5,6 +5,8 @@
         {"name":"lnksnk-mssql","datasrc":"host=localhost:1433; user=sa; password=6@N61ng@lnksnk;"}
     ],
     "resources":[
+        {"path":"/ui/","localroot":"/home/efjoubert/projects/lnknsnk/snkn/ui/"},
+        {"path":"/snkn/workspace/","localroot":"/home/efjoubert/workspace/snkn/"},
         {"path":"/coverplus-10/","localroot":"/home/efjoubert/media/audio/albums/coverplus/n10/"},
         {"path":"/media/","localroot":"/run/media/efjoubert/Acer/media"},
         {"path":"/web/","localroot":"/home/efjoubert/web/"}
