@@ -52,15 +52,17 @@ func (s *SSEContext) NextEventID() (eventid string, gotit bool) {
 
 func (s *SSEContext) NextEvents(ssef func(se *sendEvent) bool) {
 	var events []*sendEvent
-	s.mtx.RLock()
-	if events = s.events; len(events) == 0 {
-		s.mtx.RUnlock()
-		return
+	if mtx := s.mtx; mtx != nil {
+		mtx.RLock()
+		if events = s.events; len(events) == 0 {
+			s.mtx.RUnlock()
+			return
+		}
+		mtx.RUnlock()
+		mtx.Lock()
+		s.events = nil
+		mtx.Unlock()
 	}
-	s.mtx.RUnlock()
-	s.mtx.Lock()
-	s.events = nil
-	s.mtx.Unlock()
 
 	sei, sel := 0, len(events)
 	for sei < sel {
@@ -112,3 +114,13 @@ var GlobalSSContext = snkio.NewMap[string, *SSEContext](snkio.MapDeletedFunc[str
 		a[ai].Close()
 	}
 }))
+
+func PublishSSEContextEvent(sseid string, id, event string, a ...any) (err error) {
+	if sseid != "" {
+		if ssectx, ssestck := GlobalSSContext.Load(sseid); ssestck {
+			err = ssectx.Enqueue(id, event, a...)
+			return
+		}
+	}
+	return
+}
