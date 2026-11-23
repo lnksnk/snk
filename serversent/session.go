@@ -2,7 +2,6 @@ package serversent
 
 import (
 	"context"
-	"iter"
 	"net/http"
 	"time"
 )
@@ -60,11 +59,10 @@ func unwrapResponseWriter(w http.ResponseWriter) (flush ssecon, dl interface {
 func (s *session) ProcessEvents() (err error) {
 	if ssnctx := s.ssnctx; ssnctx != nil {
 		s.Trigger("", "", ssnctx.lstssnid)
-		pingTicker := time.NewTicker(20 * time.Second)
-		defer pingTicker.Stop()
+		var t = time.Now().Add(15 * time.Second)
 		var didevt = false
 		for s.sscn != nil {
-			for se := range iter.Seq[*sendEvent](ssnctx.NextEvents) {
+			for se := range ssnctx.NextEvents {
 				if err = s.sendevt(se); err != nil {
 					return
 				}
@@ -74,17 +72,16 @@ func (s *session) ProcessEvents() (err error) {
 			}
 			if didevt {
 				didevt = false
-				pingTicker.Reset(20 * time.Second)
-				continue
+				t = t.Add(15 * time.Second)
 			}
-			select {
-			case <-pingTicker.C:
+			if tn := time.Now(); tn.After(t) {
 				if err = s.Print("", "", "ping"); err != nil {
 					return
 				}
-			default:
-				time.Sleep(time.Nanosecond * 20)
+				t = tn.Add(15 * time.Second)
+				continue
 			}
+			time.Sleep(time.Millisecond * 20)
 		}
 		return
 	}
