@@ -2,7 +2,7 @@
         import { SSESnk } from '[#ep-root#]snksse.js';
         // Initialize with explicit custom server events you plan to receive
 const sse = new SSESnk('', {
-  customEvents: [],
+  customEvents: ["[#sse-events#]".split(",")],
   withCredentials: true
 });
 
@@ -11,10 +11,12 @@ sse.addEventListener('open', (e) => console.log('Connected to stream!', e.data))
 sse.addEventListener('error', (e) => console.error('Stream encountered an error:', e.data));
 sse.addEventListener('close', (e) => console.log('Stream terminated:', e.data));
 sse.addEventListener('sessionid', (e) =>{
-  console.log('Session id:', e.data);
-  if (GlobalUniqueID!==undefined) {
-    GlobalUniqueID=e.data;
-    console.log('Global Unique id:', e.data);
+  try {
+    if (GlobalUniqueID!==undefined) {
+      GlobalUniqueID=e.data;
+    }
+  } catch (error) {
+    
   }
 });
 
